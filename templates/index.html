@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sorty - Sorteo con emails</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <nav class="topbar">
+    <div class="brand">
+      <img src="{{ url_for('static', filename='sorty_logo.png') }}" alt="Sorty logo" class="brand-logo">
+      <div>
+        <div class="brand-name">Sorty</div>
+        <div class="brand-tag">Sorteo secreto</div>
+      </div>
+    </div>
+    <div class="top-links">
+      <a href="#participants" class="nav-link">Participantes</a>
+      <a href="#exclusions" class="nav-link">Exclusiones</a>
+      <a href="#details" class="nav-link">Detalles</a>
+      <button id="mode-toggle" class="mode-toggle">...</button>
+      <button id="theme-toggle" class="theme-toggle" aria-label="Cambiar tema">Claro</button>
+    </div>
+  </nav>
+
+  <main class="page">
+    <header class="hero">
+      <div class="hero-grid">
+        <div>
+          <p class="eyebrow">Bienvenido a Sorty</p>
+          <h1>Sorty</h1>
+          <p class="lede">Carga participantes, define exclusiones y envia el resultado. Por defecto usamos modo real (SMTP); puedes cambiar a prueba para solo imprimir.</p>
+          <div class="badges">
+            <span class="badge soft">Sin autoasignacion</span>
+            <span class="badge soft">Exclusiones personalizables</span>
+            <span class="badge soft">Modo por defecto: Real (SMTP)</span>
+          </div>
+        </div>
+        <div class="hero-visual">
+          <div class="logo-glow">
+            <img src="{{ url_for('static', filename='sorty_logo.png') }}" alt="Sorty" />
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <section class="card" id="participants">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">1. Participantes</p>
+          <h2>Agrega nombre, email y marca un admin</h2>
+        </div>
+        <div class="hint">Admin recibe el registro completo.</div>
+      </div>
+      <form id="participant-form" class="form-grid">
+        <label>
+          <span>Nombre</span>
+          <input type="text" id="name" placeholder="Ej: Sofia Perez" required>
+        </label>
+        <label>
+          <span>Email</span>
+          <input type="email" id="email" placeholder="ejemplo@mail.com" required>
+        </label>
+        <label class="check" id="admin-wrapper">
+          <input type="checkbox" id="is-admin">
+          <span>Es admin</span>
+        </label>
+        <button type="submit" class="button primary">Agregar</button>
+        <button type="button" id="cancel-edit" class="button ghost hidden">Cancelar edicion</button>
+      </form>
+
+      <div id="participants-empty" class="empty">Aun no hay participantes.</div>
+      <div id="participants-table" class="table-wrap hidden">
+        <table>
+          <thead>
+            <tr>
+              <th>Admin</th>
+              <th>Nombre</th>
+              <th>Email</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="participants-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card" id="exclusions">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">2. Exclusiones</p>
+          <h2>Define a quien no puede regalarle cada uno</h2>
+        </div>
+        <div class="hint">Solo agrega exclusiones si las necesitas.</div>
+      </div>
+      <form id="exclusion-form" class="form-row">
+        <label>
+          <span>Quien regala</span>
+          <select id="ex-from"></select>
+        </label>
+        <label>
+          <span>No puede regalar a</span>
+          <select id="ex-to"></select>
+        </label>
+        <button type="submit" class="button ghost">Agregar exclusion</button>
+      </form>
+      <div id="exclusions-empty" class="empty">Sin exclusiones.</div>
+      <div id="exclusions-list" class="chips"></div>
+    </section>
+
+    <section class="card" id="details">
+      <div class="section-head small">
+        <div>
+          <p class="eyebrow">3. Detalles opcionales</p>
+          <h2>Presupuesto, fecha limite y nota grupal</h2>
+        </div>
+      </div>
+      <div class="form-grid compact">
+        <label>
+          <span>Presupuesto sugerido</span>
+          <input type="text" id="budget" placeholder="Ej: $20 - $30">
+        </label>
+        <label>
+          <span>Fecha limite</span>
+          <input type="text" id="deadline" placeholder="Ej: 24/12 o 10 de enero">
+        </label>
+      </div>
+      <label class="block">
+        <span>Mensaje que veran todos</span>
+        <textarea id="note" rows="3" placeholder="Ej: Entregamos en la cena, envolver algo creativo."></textarea>
+      </label>
+    </section>
+
+    <section class="actions card" id="actions">
+      <div>
+        <h2>Listo para sortear</h2>
+        <p class="hint">Verificamos que cada persona tenga al menos un receptor posible.</p>
+      </div>
+      <div class="buttons">
+        <button id="send" class="button primary">Enviar correos</button>
+      </div>
+    </section>
+
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+  <script>
+    window.initialEmailMode = "{{ email_mode }}";
+  </script>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
