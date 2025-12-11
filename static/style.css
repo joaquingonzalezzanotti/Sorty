@@ -134,14 +134,18 @@ body {
 }
 
 .nav-link {
-  color: #cbd5e1;
+  color: var(--text);
   text-decoration: none;
   font-weight: 600;
   font-size: 14px;
 }
 
 .nav-link:hover {
-  color: #67e8f9;
+  color: var(--accent);
+}
+
+.theme-dark .nav-link {
+  color: #cbd5e1;
 }
 
 .small {
@@ -454,6 +458,45 @@ th {
   color: var(--muted);
   font-weight: 500;
   font-size: 13px;
+}
+
+.table-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.table-btn {
+  border: 1px solid var(--border);
+  background: var(--ghost-bg);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-weight: 600;
+  font-size: 12px;
+  cursor: pointer;
+  transition: transform 0.08s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.table-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.12);
+}
+
+.table-btn.ghost {
+  background: var(--input-bg);
+}
+
+.table-btn.danger {
+  background: rgba(220, 38, 38, 0.08);
+  color: #991b1b;
+  border-color: rgba(220, 38, 38, 0.3);
+}
+
+.theme-dark .table-btn.danger {
+  background: rgba(239, 68, 68, 0.15);
+  color: #fecdd3;
+  border-color: rgba(239, 68, 68, 0.4);
 }
 
 .badge-admin {

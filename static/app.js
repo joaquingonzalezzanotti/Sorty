@@ -18,6 +18,8 @@ const themeToggle = document.getElementById("theme-toggle");
 const adminCheckbox = document.getElementById("is-admin");
 const adminWrapper = document.getElementById("admin-wrapper");
 const cancelEditBtn = document.getElementById("cancel-edit");
+const nameInput = document.getElementById("name");
+const emailInput = document.getElementById("email");
 const submitBtn = participantForm.querySelector("button[type='submit']");
 const themeKey = "sorty-theme";
 const initialTheme = localStorage.getItem(themeKey) || "light";
@@ -33,6 +35,13 @@ function showToast(message, type = "info") {
   setTimeout(() => {
     toast.classList.remove("show");
   }, 2600);
+}
+
+function focusName() {
+  if (nameInput) {
+    nameInput.focus();
+    nameInput.select();
+  }
 }
 
 function renderParticipants() {
@@ -72,16 +81,16 @@ function renderParticipants() {
 
     const actionCell = document.createElement("td");
     const removeBtn = document.createElement("button");
-    removeBtn.className = "remove";
+    removeBtn.className = "table-btn danger";
     removeBtn.type = "button";
     removeBtn.textContent = "Eliminar";
     removeBtn.addEventListener("click", () => removeParticipant(p.id));
     const editBtn = document.createElement("button");
-    editBtn.className = "remove";
+    editBtn.className = "table-btn ghost";
     editBtn.type = "button";
-    editBtn.style.marginRight = "8px";
     editBtn.textContent = "Editar";
     editBtn.addEventListener("click", () => startEdit(p.id));
+    actionCell.classList.add("table-actions");
     actionCell.appendChild(editBtn);
     actionCell.appendChild(removeBtn);
 
@@ -147,8 +156,8 @@ if (themeToggle) {
 
 participantForm.addEventListener("submit", (e) => {
   e.preventDefault();
-  const name = document.getElementById("name").value.trim();
-  const email = document.getElementById("email").value.trim().toLowerCase();
+  const name = (nameInput?.value || "").trim();
+  const email = (emailInput?.value || "").trim().toLowerCase();
   const hasAdmin = state.participants.some((p) => p.is_admin);
   const isEditing = Boolean(state.editingId);
   const editingTarget = state.participants.find((p) => p.id === state.editingId);
@@ -354,6 +363,7 @@ renderParticipants();
 renderExclusions();
 renderMode();
 renderTheme();
+focusName();
 
 function syncAdminCheckbox() {
   const hasAdmin = state.participants.some((p) => p.is_admin);
@@ -394,6 +404,7 @@ function resetForm() {
   submitBtn.textContent = "Agregar";
   cancelEditBtn.classList.add("hidden");
   syncAdminCheckbox();
+  focusName();
 }
 
 cancelEditBtn.addEventListener("click", () => {
@@ -404,10 +415,11 @@ function startEdit(id) {
   const target = state.participants.find((p) => p.id === id);
   if (!target) return;
   state.editingId = id;
-  document.getElementById("name").value = target.name;
-  document.getElementById("email").value = target.email;
+  if (nameInput) nameInput.value = target.name;
+  if (emailInput) emailInput.value = target.email;
   adminCheckbox.checked = target.is_admin;
   submitBtn.textContent = "Guardar cambios";
   cancelEditBtn.classList.remove("hidden");
   syncAdminCheckbox();
+  focusName();
 }
