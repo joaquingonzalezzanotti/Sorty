@@ -1,4 +1,4 @@
-const state = {
+﻿const state = {
   participants: [],
   exclusions: [],
   meta: {
@@ -393,8 +393,7 @@ function setTheme(theme) {
 
 function renderTheme() {
   if (themeToggle) {
-    const isDark = document.body.classList.contains("theme-dark");
-    themeToggle.textContent = isDark ? "Oscuro" : "Claro";
+    // Apariencia del toggle manejada por CSS; sin texto dinamico.
   }
 }
 
@@ -423,3 +422,5 @@ function startEdit(id) {
   syncAdminCheckbox();
   focusName();
 }
+
+

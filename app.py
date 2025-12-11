@@ -11,7 +11,7 @@ from typing import Dict, List, Optional, Set, Tuple
 from flask import Flask, jsonify, render_template, request
 
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder="static", template_folder="templates")
 
 
 class AppError(Exception):
@@ -217,12 +217,13 @@ def build_admin_email(
         )
         rows_text.append(f"{giver['name']} -> {receiver['name']} ({receiver['email']})")
 
-    subject = "Registro completo - Sorty"
+    subject = "Resultados del Sorteo - Administrador"
     html_parts = [
         "<!doctype html><html><body style=\"font-family:'Segoe UI', Arial, sans-serif; background:#f6f8fb; padding:24px; color:#1d2433;\">",
         "<div style=\"max-width:560px; margin:0 auto; background:#ffffff; border-radius:14px; padding:24px; box-shadow:0 12px 40px rgba(0,0,0,0.08);\">",
         "<div style=\"font-size:14px; letter-spacing:0.4px; text-transform:uppercase; color:#5f6b7a;\">Administrador</div>",
-        "<h2 style=\"margin:12px 0 10px; font-size:22px; color:#111827;\">Asignaciones completas</h2>",
+        "<h2 style=\"margin:12px 0 10px; font-size:22px; color:#111827;\">Asignaciones Completas</h2>",
+        "<p style='font-size:15px;'>Este correo se envía porque usted es el administrador del sorteo y contiene todos los resultados. Si desea ver únicamente a quién le ha tocado, por favor revise el otro correo.</p>",
         "<table style='width:100%; border-collapse:collapse; margin-top:10px; font-size:15px;'>",
         "<thead><tr><th style='text-align:left; padding:8px 10px; color:#6b7280;'>Entrega</th><th style='text-align:left; padding:8px 10px; color:#6b7280;'>Para</th></tr></thead>",
         "<tbody>",

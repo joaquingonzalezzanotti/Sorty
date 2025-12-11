@@ -3,7 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sorty - Sorteo con emails</title>
+<title>Sorty</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='sorty_logo.png') }}">
+  <link rel="shortcut icon" type="image/png" href="{{ url_for('static', filename='sorty_logo.png') }}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -23,7 +25,14 @@
       <a href="#exclusions" class="nav-link">Exclusiones</a>
       <a href="#details" class="nav-link">Detalles</a>
       <button id="mode-toggle" class="mode-toggle">...</button>
-      <button id="theme-toggle" class="theme-toggle" aria-label="Cambiar tema">Claro</button>
+      <button id="theme-toggle" class="theme-toggle" aria-label="Cambiar tema">
+        <span class="theme-toggle-track">
+          <span class="theme-toggle-thumb">
+            <span class="theme-toggle-icon sun" aria-hidden="true">☀</span>
+            <span class="theme-toggle-icon moon" aria-hidden="true">☾</span>
+          </span>
+        </span>
+      </button>
     </div>
   </nav>
 
@@ -54,7 +63,7 @@
           <p class="eyebrow">1. Participantes</p>
           <h2>Agrega nombre, email y marca un admin</h2>
         </div>
-        <div class="hint">Admin recibe el registro completo.</div>
+        <div class="hint">Administrador recibe el registro completo.</div>
       </div>
       <form id="participant-form" class="form-grid">
         <label>
@@ -66,19 +75,22 @@
           <input type="email" id="email" placeholder="ejemplo@mail.com" required>
         </label>
         <label class="check" id="admin-wrapper">
+          <span class="check-text">Administrador</span>
           <input type="checkbox" id="is-admin">
-          <span>Es admin</span>
+          <span class="check-switch" aria-hidden="true"></span>
         </label>
         <button type="submit" class="button primary">Agregar</button>
         <button type="button" id="cancel-edit" class="button ghost hidden">Cancelar edicion</button>
       </form>
 
+      <div class="mobile-participants-label hidden-mobile-desktop">Participantes</div>
+
       <div id="participants-empty" class="empty">Aun no hay participantes.</div>
       <div id="participants-table" class="table-wrap hidden">
-        <table>
+        <table class="participants-table">
           <thead>
             <tr>
-              <th>Admin</th>
+              <th>Administrador</th>
               <th>Nombre</th>
               <th>Email</th>
               <th></th>
@@ -106,7 +118,7 @@
           <span>No puede regalar a</span>
           <select id="ex-to"></select>
         </label>
-        <button type="submit" class="button ghost">Agregar exclusion</button>
+        <button type="submit" class="button primary">Agregar exclusion</button>
       </form>
       <div id="exclusions-empty" class="empty">Sin exclusiones.</div>
       <div id="exclusions-list" class="chips"></div>
@@ -147,7 +159,31 @@
 
   </main>
 
+  <footer class="footer">
+    <div class="footer-left">
+      <div class="brand-name">Sorty</div>
+      <div class="brand-tag">Sorteo secreto sencillo</div>
+    </div>
+    <div class="footer-right">
+      <span class="footer-author">Creado por <span class="footer-siglas">JGZ</span></span>
+      <a href="https://github.com/joaquingonzalezzanotti" target="_blank" rel="noopener" class="footer-link">GitHub</a>
+    </div>
+  </footer>
+
   <div id="toast" class="toast hidden"></div>
+  <div id="send-overlay" class="send-overlay hidden" aria-live="assertive">
+    <div class="send-overlay-card">
+      <div id="send-spinner" class="send-spinner" aria-hidden="true"></div>
+      <div id="send-check" class="send-check hidden" aria-hidden="true">
+        <svg viewBox="0 0 24 24" class="send-check-icon" role="presentation">
+          <path d="M20 6L9 17l-5-5" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"></path>
+        </svg>
+      </div>
+      <div id="send-overlay-text" class="send-overlay-text">Enviando correos...</div>
+      <div id="send-overlay-sub" class="send-overlay-sub">Esto puede tardar algunos segundos.</div>
+      <button id="send-overlay-ok" class="button primary hidden" type="button">OK</button>
+    </div>
+  </div>
   <script>
     window.initialEmailMode = "{{ email_mode }}";
   </script>
