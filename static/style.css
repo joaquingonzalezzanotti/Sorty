@@ -944,6 +944,14 @@ th {
     max-width: 100%;
     white-space: normal;
   }
+  .participant-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .participant-name {
+    margin: 0;
+  }
   .table-actions {
     order: 3;
     min-width: auto;

@@ -8,6 +8,7 @@
   },
   emailMode: "smtp",
   editingId: null,
+  isSending: false,
 };
 
 const participantForm = document.getElementById("participant-form");
@@ -19,6 +20,13 @@ const adminWrapper = document.getElementById("admin-wrapper");
 const cancelEditBtn = document.getElementById("cancel-edit");
 const nameInput = document.getElementById("name");
 const emailInput = document.getElementById("email");
+const sendBtn = document.getElementById("send");
+const sendOverlay = document.getElementById("send-overlay");
+const sendSpinner = document.getElementById("send-spinner");
+const sendCheck = document.getElementById("send-check");
+const sendOverlayText = document.getElementById("send-overlay-text");
+const sendOverlaySub = document.getElementById("send-overlay-sub");
+const sendOverlayOk = document.getElementById("send-overlay-ok");
 const submitBtn = participantForm.querySelector("button[type='submit']");
 const themeKey = "sorty-theme";
 const initialTheme = localStorage.getItem(themeKey) || "light";
@@ -34,6 +42,33 @@ function showToast(message, type = "info") {
   setTimeout(() => {
     toast.classList.remove("show");
   }, 2600);
+}
+
+function setSending(active, { message = "", sub = "", status = "sending" } = {}) {
+  state.isSending = active;
+  if (sendBtn) {
+    sendBtn.disabled = active;
+    sendBtn.classList.toggle("loading", active);
+    sendBtn.setAttribute("aria-busy", active ? "true" : "false");
+  }
+  if (sendOverlay) {
+    sendOverlay.classList.toggle("hidden", !active);
+  }
+  if (sendSpinner) {
+    sendSpinner.classList.toggle("hidden", status !== "sending");
+  }
+  if (sendCheck) {
+    sendCheck.classList.toggle("hidden", status !== "success");
+  }
+  if (sendOverlayOk) {
+    sendOverlayOk.classList.toggle("hidden", status !== "success");
+  }
+  if (sendOverlayText && message) {
+    sendOverlayText.textContent = message;
+  }
+  if (sendOverlaySub) {
+    sendOverlaySub.textContent = sub || (status === "sending" ? "Esto puede tardar algunos segundos." : "");
+  }
 }
 
 function focusName() {
@@ -84,6 +119,18 @@ function renderParticipants() {
     removeBtn.type = "button";
     removeBtn.textContent = "Eliminar";
     removeBtn.addEventListener("click", () => removeParticipant(p.id));
+    const editIconBtn = document.createElement("button");
+    editIconBtn.className = "table-btn icon ghost";
+    editIconBtn.type = "button";
+    editIconBtn.setAttribute("aria-label", `Editar ${p.name}`);
+    editIconBtn.textContent = "✎";
+    editIconBtn.addEventListener("click", () => startEdit(p.id));
+    const removeIconBtn = document.createElement("button");
+    removeIconBtn.className = "table-btn icon danger";
+    removeIconBtn.type = "button";
+    removeIconBtn.setAttribute("aria-label", `Eliminar ${p.name}`);
+    removeIconBtn.textContent = "🗑";
+    removeIconBtn.addEventListener("click", () => removeParticipant(p.id));
     const editBtn = document.createElement("button");
     editBtn.className = "table-btn ghost";
     editBtn.type = "button";
@@ -92,6 +139,8 @@ function renderParticipants() {
     actionCell.classList.add("table-actions");
     actionCell.appendChild(editBtn);
     actionCell.appendChild(removeBtn);
+    actionCell.appendChild(editIconBtn);
+    actionCell.appendChild(removeIconBtn);
 
     tr.appendChild(adminCell);
     tr.appendChild(nameCell);
@@ -303,6 +352,11 @@ function localFeasibilityCheck() {
 }
 
 async function submitDraw(send) {
+  if (state.isSending) {
+    showToast("Ya estamos enviando. Espera un momento.", "info");
+    return;
+  }
+
   const error = localFeasibilityCheck();
   if (error) {
     showToast(error, "error");
@@ -324,6 +378,9 @@ async function submitDraw(send) {
     send,
   };
 
+  setSending(true, { message: send ? "Enviando correos..." : "Preparando simulacion..." });
+  let showSuccessOverlay = false;
+  let count = null;
   try {
     const res = await fetch("/api/draw", {
       method: "POST",
@@ -332,17 +389,32 @@ async function submitDraw(send) {
     });
     const data = await res.json();
     if (!data.ok) throw new Error(data.error || "Error en el sorteo.");
+    count = data.email_status?.emails;
     if (data.email_status?.mode === "smtp" || send) {
+      showSuccessOverlay = true;
+      setSending(true, {
+        message: "Correos enviados",
+        sub: count ? `Enviados ${count} correos.` : "",
+        status: "success",
+      });
       showToast("Correos enviados.", "success");
     } else {
       showToast("Simulacion lista.", "success");
     }
   } catch (err) {
     showToast(err.message || "Error inesperado.", "error");
+  } finally {
+    if (!showSuccessOverlay) {
+      setSending(false);
+    }
   }
 }
 
 document.getElementById("send").addEventListener("click", () => submitDraw(true));
+
+if (sendOverlayOk) {
+  sendOverlayOk.addEventListener("click", () => setSending(false));
+}
 
 renderParticipants();
 renderExclusions();
