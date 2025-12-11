@@ -1,11 +1,11 @@
 from app import app
-from vercel_serverless_wsgi import handle_wsgi
+from vercel_wsgi import handle_request
 
 
-def handler(event, context):
+def handler(request, context):
   """Entrypoint para Vercel (Serverless Function)."""
-  return handle_wsgi(app, event, context)
+  return handle_request(app, request, context)
 
 
-# Alias util por si alguna herramienta espera "app" como callable.
+# Alias util si Vercel expone por nombre app/application.
 application = app
