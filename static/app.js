@@ -6,14 +6,13 @@
     deadline: "",
     note: "",
   },
-  emailMode: (window.initialEmailMode || "smtp").toLowerCase(),
+  emailMode: "smtp",
   editingId: null,
 };
 
 const participantForm = document.getElementById("participant-form");
 const exclusionForm = document.getElementById("exclusion-form");
 const toast = document.getElementById("toast");
-const modeToggle = document.getElementById("mode-toggle");
 const themeToggle = document.getElementById("theme-toggle");
 const adminCheckbox = document.getElementById("is-admin");
 const adminWrapper = document.getElementById("admin-wrapper");
@@ -131,20 +130,8 @@ function removeParticipant(id) {
 }
 
 function renderMode() {
-  const mode = state.emailMode === "smtp" ? "Real (SMTP)" : "Prueba (no envia)";
-  modeToggle.textContent = mode;
-  modeToggle.classList.toggle("real", state.emailMode === "smtp");
+  // Modo fijo SMTP en despliegue Vercel.
 }
-
-modeToggle.addEventListener("click", () => {
-  state.emailMode = state.emailMode === "smtp" ? "console" : "smtp";
-  renderMode();
-  if (state.emailMode === "smtp") {
-    showToast("Modo real: requiere SMTP_USER/PASS y host configurados.", "success");
-  } else {
-    showToast("Modo prueba: solo imprime correos.", "info");
-  }
-});
 
 if (themeToggle) {
   themeToggle.addEventListener("click", () => {
@@ -345,10 +332,8 @@ async function submitDraw(send) {
     });
     const data = await res.json();
     if (!data.ok) throw new Error(data.error || "Error en el sorteo.");
-    if (data.email_status?.mode === "smtp") {
+    if (data.email_status?.mode === "smtp" || send) {
       showToast("Correos enviados.", "success");
-    } else if (send) {
-      showToast("Modo consola: se imprimen los correos en el servidor.", "success");
     } else {
       showToast("Simulacion lista.", "success");
     }
@@ -361,7 +346,6 @@ document.getElementById("send").addEventListener("click", () => submitDraw(true)
 
 renderParticipants();
 renderExclusions();
-renderMode();
 renderTheme();
 focusName();
 
@@ -422,5 +406,3 @@ function startEdit(id) {
   syncAdminCheckbox();
   focusName();
 }
-
-
