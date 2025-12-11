@@ -1,2 +1,1 @@
 Flask>=3.0.0
-vercel-wsgi>=0.3.1
