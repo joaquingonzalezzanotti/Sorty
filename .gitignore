@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Node / Playwright
+node_modules/
+playwright-report/
+test-results/
+.playwright-cache/
+
+# OS/Editor
+.DS_Store
+Thumbs.db
+*.log
+.env

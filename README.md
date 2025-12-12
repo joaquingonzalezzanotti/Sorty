@@ -4,8 +4,8 @@ Sorty es mi herramienta personal para organizar sorteos de amigo secreto sin vue
 
 ## Características
 - Interfaz web en español con modo claro/oscuro y flujo guiado por secciones.
-- Validación de participantes, exclusiones y administrador único antes de sortear.
-- Envío de correos HTML y texto plano para cada participante y un resumen para el administrador.
+- Validación de participantes, exclusiones y Administrador único antes de sortear.
+- Envío de correos HTML y texto plano para cada participante y un resumen para el Administrador.
 
 ## Ejecución web
 - No necesitas instalar nada para usar la herramienta. Puedes acceder a la versión desplegada directamente en:
@@ -13,7 +13,7 @@ Sorty es mi herramienta personal para organizar sorteos de amigo secreto sin vue
 
 
 ## Cómo funciona el sorteo
-- El formulario exige nombre, email y un único administrador; las exclusiones se validan contra la lista de participantes.
+- El formulario exige nombre, email y un único Administrador; las exclusiones se validan contra la lista de participantes.
 - El servidor busca asignaciones válidas respetando exclusiones y evita autoasignaciones. Si no hay solución, responde con un error amigable.
 - Si `send` es verdadero en `/api/draw`, el backend arma los mensajes y los envía según el modo configurado.
 
