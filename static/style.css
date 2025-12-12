@@ -711,6 +711,9 @@ th {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.participant-email-mobile {
   display: none;
 }
 
@@ -904,7 +907,7 @@ th {
   }
   tr {
     display: grid;
-    grid-template-columns: 15% 65% 20%;
+    grid-template-columns: 15% 60% minmax(110px, 1fr);
     align-items: flex-start;
     gap: 10px;
     margin-bottom: 10px;
@@ -945,6 +948,9 @@ th {
     display: none;
   }
   .participant-email {
+    display: none;
+  }
+  .participant-email-mobile {
     display: block;
     max-width: 100%;
     white-space: normal;
@@ -964,19 +970,20 @@ th {
   }
   .table-actions {
     order: 3;
-    min-width: auto;
+    min-width: 110px;
     margin-left: 8px;
     gap: 6px;
     justify-content: flex-end;
     width: 100%;
+    padding-right: 0;
   }
   .table-btn {
     display: none;
   }
   .table-btn.icon {
     display: inline-flex;
-    width: 34px;
-    height: 34px;
+    width: 32px;
+    height: 32px;
     padding: 0;
     align-items: center;
     justify-content: center;

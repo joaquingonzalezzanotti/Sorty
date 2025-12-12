@@ -114,14 +114,15 @@ function renderParticipants() {
     const nameLine = document.createElement("div");
     nameLine.className = "participant-name";
     nameLine.textContent = p.name;
-    const emailLine = document.createElement("div");
-    emailLine.className = "participant-email";
-    emailLine.textContent = p.email;
+    const emailMobile = document.createElement("div");
+    emailMobile.className = "participant-email participant-email-mobile";
+    emailMobile.textContent = p.email;
     infoWrap.appendChild(nameLine);
-    infoWrap.appendChild(emailLine);
+    infoWrap.appendChild(emailMobile);
     nameCell.appendChild(infoWrap);
 
     const emailCell = document.createElement("td");
+    emailCell.className = "email-cell";
     emailCell.textContent = p.email;
 
     const actionCell = document.createElement("td");
