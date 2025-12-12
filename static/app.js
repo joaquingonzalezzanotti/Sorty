@@ -108,7 +108,18 @@ function renderParticipants() {
     adminCell.appendChild(radio);
 
     const nameCell = document.createElement("td");
-    nameCell.textContent = p.name;
+    nameCell.className = "name-cell";
+    const infoWrap = document.createElement("div");
+    infoWrap.className = "participant-info";
+    const nameLine = document.createElement("div");
+    nameLine.className = "participant-name";
+    nameLine.textContent = p.name;
+    const emailLine = document.createElement("div");
+    emailLine.className = "participant-email";
+    emailLine.textContent = p.email;
+    infoWrap.appendChild(nameLine);
+    infoWrap.appendChild(emailLine);
+    nameCell.appendChild(infoWrap);
 
     const emailCell = document.createElement("td");
     emailCell.textContent = p.email;
@@ -398,6 +409,7 @@ async function submitDraw(send) {
         status: "success",
       });
       showToast("Correos enviados.", "success");
+      resetAppState();
     } else {
       showToast("Simulacion lista.", "success");
     }
@@ -413,7 +425,10 @@ async function submitDraw(send) {
 document.getElementById("send").addEventListener("click", () => submitDraw(true));
 
 if (sendOverlayOk) {
-  sendOverlayOk.addEventListener("click", () => setSending(false));
+  sendOverlayOk.addEventListener("click", () => {
+    setSending(false);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
 }
 
 renderParticipants();

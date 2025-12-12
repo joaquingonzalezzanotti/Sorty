@@ -887,7 +887,7 @@ th {
   display: none;
 }
 
-@media (max-width: 780px) {
+@media (max-width: 960px) {
   .table-wrap {
     overflow-x: hidden;
   }
@@ -904,8 +904,8 @@ th {
   }
   tr {
     display: grid;
-    grid-template-columns: auto 1fr auto;
-    align-items: center;
+    grid-template-columns: 15% 65% 20%;
+    align-items: flex-start;
     gap: 10px;
     margin-bottom: 10px;
     padding: 10px;
@@ -931,10 +931,15 @@ th {
     order: 1;
     padding-right: 6px;
     padding-left: 0;
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-start;
+    width: 100%;
   }
   .name-cell {
     order: 2;
     width: 100%;
+    text-align: left;
   }
   .email-cell {
     display: none;
@@ -943,20 +948,27 @@ th {
     display: block;
     max-width: 100%;
     white-space: normal;
+    margin: 0;
   }
   .participant-info {
     display: flex;
     flex-direction: column;
     gap: 2px;
+    align-items: flex-start;
+    width: 100%;
   }
   .participant-name {
     margin: 0;
+    font-weight: 700;
+    color: var(--text);
   }
   .table-actions {
     order: 3;
     min-width: auto;
     margin-left: 8px;
     gap: 6px;
+    justify-content: flex-end;
+    width: 100%;
   }
   .table-btn {
     display: none;
