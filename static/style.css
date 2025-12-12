@@ -579,6 +579,7 @@ textarea:focus {
   #admin-wrapper {
     align-self: center;
     width: 100%;
+    margin-top: 22px; /* alinea con los labels de los campos */
   }
   .check {
     min-height: 42px;
@@ -591,6 +592,7 @@ textarea:focus {
   #participant-form .button.primary {
     width: 100%;
     height: 42px;
+    margin-top: 22px; /* alinea con los labels de los campos */
   }
 }
 
