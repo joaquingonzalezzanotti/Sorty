@@ -1,4 +1,5 @@
 :root {
+  --page-gutter: clamp(16px, 4vw, 22px);
   --bg: #f6f7fb;
   --panel: #ffffff;
   --card: #ffffff;
@@ -64,7 +65,7 @@ body {
   background: var(--bg-gradient);
   color: var(--text);
   min-height: 100vh;
-  padding: 24px;
+  padding: 24px var(--page-gutter);
   overflow-x: hidden;
 }
 
@@ -75,7 +76,7 @@ html {
 
 @media (max-width: 900px) {
   body {
-    padding: 16px;
+    padding: 16px var(--page-gutter);
   }
   .page {
     max-width: 100%;
@@ -1259,7 +1260,7 @@ th {
 
 @media (max-width: 780px) {
   body {
-    padding: 16px;
+    padding: 16px var(--page-gutter);
   }
   .topbar {
     display: grid;
