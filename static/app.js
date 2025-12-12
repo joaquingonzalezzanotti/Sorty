@@ -55,13 +55,25 @@ function setSending(active, { message = "", sub = "", status = "sending" } = {})
     sendOverlay.classList.toggle("hidden", !active);
   }
   if (sendSpinner) {
-    sendSpinner.classList.toggle("hidden", status !== "sending");
+    if (status === "sending") {
+      sendSpinner.classList.remove("hidden");
+    } else {
+      sendSpinner.classList.add("hidden");
+    }
   }
   if (sendCheck) {
-    sendCheck.classList.toggle("hidden", status !== "success");
+    if (status === "success") {
+      sendCheck.classList.remove("hidden");
+    } else {
+      sendCheck.classList.add("hidden");
+    }
   }
   if (sendOverlayOk) {
-    sendOverlayOk.classList.toggle("hidden", status !== "success");
+    if (status === "success") {
+      sendOverlayOk.classList.remove("hidden");
+    } else {
+      sendOverlayOk.classList.add("hidden");
+    }
   }
   if (sendOverlayText && message) {
     sendOverlayText.textContent = message;
