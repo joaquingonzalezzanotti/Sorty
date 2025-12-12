@@ -504,8 +504,8 @@ function ensureAdminBeforeDraw() {
 
 function localFeasibilityCheck() {
   state.exclusionIssue = null;
-  if (state.participants.length < 2) {
-    return "Carga al menos dos personas.";
+  if (state.participants.length < 3) {
+    return "Carga al menos tres personas.";
   }
   const adminCount = state.participants.filter((p) => p.is_admin).length;
   if (adminCount !== 1) {
@@ -539,8 +539,8 @@ async function submitDraw(send) {
     return;
   }
 
-  if (state.participants.length < 2) {
-    showToast("Carga al menos dos personas.", "error");
+  if (state.participants.length < 3) {
+    showToast("Carga al menos tres personas.", "error");
     return;
   }
 

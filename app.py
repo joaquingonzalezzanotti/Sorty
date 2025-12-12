@@ -10,8 +10,13 @@ from typing import Dict, List, Optional, Set, Tuple
 
 from flask import Flask, jsonify, render_template, request
 
+from models import Asignacion, Participante, Sorteo, db
+
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
+app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL", "sqlite:///sorty.db")
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+db.init_app(app)
 
 
 class AppError(Exception):
@@ -43,8 +48,8 @@ def validate_participants(raw: List[dict]) -> List[dict]:
         admin_count += 1 if is_admin else 0
         participants.append({"name": name, "email": email, "is_admin": is_admin})
 
-    if len(participants) < 2:
-        raise AppError("Carga al menos dos participantes.")
+    if len(participants) < 3:
+        raise AppError("Carga al menos tres participantes.")
     if admin_count != 1:
         raise AppError("Selecciona exactamente un Administrador.")
 
