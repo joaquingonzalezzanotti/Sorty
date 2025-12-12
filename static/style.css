@@ -970,13 +970,11 @@ th {
   }
   .table-actions {
     order: 3;
-    min-width: 76px;
-    margin-left: 0;
-    gap: 10px;
+    min-width: 96px;
+    margin-left: 0px;
+    gap: 8px;
     justify-content: flex-start;
-    width: auto;
-    padding-right: 0;
-    align-self: flex-start;
+    width: auto;    padding-right: 0;
   }
   .table-btn {
     display: none;
