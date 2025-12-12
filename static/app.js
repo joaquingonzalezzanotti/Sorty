@@ -84,10 +84,11 @@ function setSending(active, { message = "", sub = "", status = "sending" } = {})
 }
 
 function focusName() {
-  if (nameInput) {
-    nameInput.focus();
-    nameInput.select();
-  }
+  // Evitar abrir teclado en mobile: solo enfocar en escritorio/puntero fino.
+  const isDesktop = window.matchMedia("(pointer:fine)").matches && window.innerWidth > 900;
+  if (!isDesktop || !nameInput) return;
+  nameInput.focus();
+  nameInput.select();
 }
 
 function renderParticipants() {
@@ -447,7 +448,6 @@ if (sendOverlayOk) {
 renderParticipants();
 renderExclusions();
 renderTheme();
-focusName();
 
 function syncAdminCheckbox() {
   const hasAdmin = state.participants.some((p) => p.is_admin);
