@@ -14,7 +14,8 @@ from models import Asignacion, Participante, Sorteo, db
 
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
-app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get("DATABASE_URL", "sqlite:///sorty.db")
+db_uri = os.environ.get("DATABASE2_URL") or os.environ.get("DATABASE_URL") or "sqlite:///sorty.db"
+app.config["SQLALCHEMY_DATABASE_URI"] = db_uri
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 db.init_app(app)
 
