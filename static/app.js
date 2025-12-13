@@ -593,8 +593,14 @@ async function submitDraw(send) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    const data = await res.json();
-    if (!data.ok) throw new Error(data.error || "Error en el sorteo.");
+    const raw = await res.text();
+    let data = null;
+    try {
+      data = JSON.parse(raw);
+    } catch (e) {
+      throw new Error("Respuesta del servidor invalida. Intenta nuevamente.");
+    }
+    if (!res.ok || !data?.ok) throw new Error(data?.error || "Error en el sorteo.");
     count = data.email_status?.emails;
     if (data.email_status?.mode === "smtp" || send) {
       showSuccessOverlay = true;
