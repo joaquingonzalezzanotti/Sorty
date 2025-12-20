@@ -504,8 +504,8 @@ function ensureAdminBeforeDraw() {
 
 function localFeasibilityCheck() {
   state.exclusionIssue = null;
-  if (state.participants.length < 2) {
-    return "Carga al menos dos personas.";
+  if (state.participants.length < 3) {
+    return "Carga al menos tres personas.";
   }
   const adminCount = state.participants.filter((p) => p.is_admin).length;
   if (adminCount !== 1) {
@@ -539,8 +539,8 @@ async function submitDraw(send) {
     return;
   }
 
-  if (state.participants.length < 2) {
-    showToast("Carga al menos dos personas.", "error");
+  if (state.participants.length < 3) {
+    showToast("Carga al menos tres personas.", "error");
     return;
   }
 
@@ -588,13 +588,19 @@ async function submitDraw(send) {
   let showSuccessOverlay = false;
   let count = null;
   try {
-    const res = await fetch("/api/draw", {
+    const res = await fetch("/api/sorteo", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    const data = await res.json();
-    if (!data.ok) throw new Error(data.error || "Error en el sorteo.");
+    const raw = await res.text();
+    let data = null;
+    try {
+      data = JSON.parse(raw);
+    } catch (e) {
+      throw new Error("Respuesta del servidor invalida. Intenta nuevamente.");
+    }
+    if (!res.ok || !data?.ok) throw new Error(data?.error || "Error en el sorteo.");
     count = data.email_status?.emails;
     if (data.email_status?.mode === "smtp" || send) {
       showSuccessOverlay = true;

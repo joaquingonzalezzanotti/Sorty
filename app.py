@@ -3,15 +3,45 @@ import random
 import smtplib
 import ssl
 import threading
+import uuid
 import webbrowser
 from email.message import EmailMessage
 from email.utils import formataddr
 from typing import Dict, List, Optional, Set, Tuple
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, send_from_directory
+from sqlalchemy.orm import joinedload
+
+from models import Asignacion, Participante, Sorteo, db
+
+
+def resolve_database_uri() -> str:
+    """Pick the first available connection string, supporting Vercel + Neon defaults."""
+
+    def normalize(uri: str) -> str:
+        # Force psycopg (psycopg3) driver so we don't need psycopg2 in Vercel.
+        if uri.startswith("postgres://"):
+            return "postgresql+psycopg://" + uri[len("postgres://") :]
+        if uri.startswith("postgresql://"):
+            return uri.replace("postgresql://", "postgresql+psycopg://", 1)
+        return uri
+
+    candidates = [
+        os.getenv("DATABASE_URL"),
+        os.getenv("POSTGRES_PRISMA_URL"),  # Vercel + Neon (pooled)
+        os.getenv("POSTGRES_URL"),  # Vercel + Neon (pooled)
+        os.getenv("POSTGRES_URL_NON_POOLING"),
+    ]
+    for uri in candidates:
+        if uri:
+            return normalize(uri)
+    return "sqlite:///sorty.db"
 
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
+app.config["SQLALCHEMY_DATABASE_URI"] = resolve_database_uri()
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+db.init_app(app)
 
 
 class AppError(Exception):
@@ -43,8 +73,8 @@ def validate_participants(raw: List[dict]) -> List[dict]:
         admin_count += 1 if is_admin else 0
         participants.append({"name": name, "email": email, "is_admin": is_admin})
 
-    if len(participants) < 2:
-        raise AppError("Carga al menos dos participantes.")
+    if len(participants) < 3:
+        raise AppError("Carga al menos tres participantes.")
     if admin_count != 1:
         raise AppError("Selecciona exactamente un Administrador.")
 
@@ -132,12 +162,22 @@ def build_participant_email(
     deadline = meta.get("deadline")
     note = meta.get("note")
 
+    base = (os.getenv("PUBLIC_APP_URL") or "").strip().rstrip("/")
+    if not base:
+        try:
+            base = (request.url_root or "").rstrip("/")
+        except RuntimeError:
+            base = "http://localhost:5000"
+    if base.startswith("http://"):
+        base = "https://" + base[len("http://") :]
+    logo_url = f"{base}/static/sorty_logo.png"
+
     subject_line = "Tu sorteo (Sorty)" + (f" - Entrega antes de {deadline}" if deadline else "")
 
     text_lines = [
         f"Hola {giver['name']},",
         "",
-        f"Te toco regalar a: {receiver['name']} ({receiver['email']}).",
+        f"Te toco regalar a: {receiver['name']}.",
     ]
     if budget:
         text_lines.append(f"Presupuesto sugerido: {budget}.")
@@ -160,9 +200,10 @@ def build_participant_email(
         "<html>",
         "<body style=\"font-family:'Segoe UI', Arial, sans-serif; background:#f6f8fb; padding:24px; color:#1d2433;\">",
         "<div style=\"max-width:520px; margin:0 auto; background:#ffffff; border-radius:14px; padding:24px; box-shadow:0 12px 40px rgba(0,0,0,0.08);\">",
+        f"<div style='text-align:center; margin-bottom:10px;'><img src=\"{logo_url}\" alt=\"Sorty\" width=\"72\" style=\"display:inline-block;\"></div>",
         f"<div style=\"font-size:14px; letter-spacing:0.4px; text-transform:uppercase; color:#5f6b7a;\">Sorty</div>",
         f"<h2 style=\"margin:12px 0 10px; font-size:24px; color:#111827;\">Hola {giver['name']},</h2>",
-        f"<p style=\"font-size:16px; line-height:1.6; margin:12px 0;\">Te toco regalar a <strong>{receiver['name']}</strong> (<a style=\"color:#0e7490; text-decoration:none;\" href=\"mailto:{receiver['email']}\">{receiver['email']}</a>).</p>",
+        f"<p style=\"font-size:16px; line-height:1.6; margin:12px 0;\">Te toco regalar a <strong>{receiver['name']}</strong>.</p>",
     ]
 
     if budget:
@@ -186,7 +227,7 @@ def build_participant_email(
         "</div>"
     )
     html_parts.append(
-        f"<p style=\"margin-top:14px; font-size:13px; color:#6b7280;\">Enviado por {sender_name} via Sorty.</p>"
+        f"<p style=\"margin-top:14px; font-size:13px; color:#6b7280;\">Enviado por {sender_name}.</p>"
     )
     html_parts.append("</div></body></html>")
 
@@ -200,6 +241,8 @@ def build_admin_email(
     meta: dict,
     sender_name: str,
     exclusions: List[Tuple[str, str]],
+    admin_link: Optional[str] = None,
+    code: Optional[str] = None,
 ) -> Tuple[str, str, str]:
     budget = meta.get("budget")
     deadline = meta.get("deadline")
@@ -217,12 +260,12 @@ def build_admin_email(
         )
         rows_text.append(f"{giver['name']} -> {receiver['name']} ({receiver['email']})")
 
-    subject = "Resultados del Sorteo - Administrador"
+    subject = f"Resultados del Sorteo - {code}" if code else "Resultados del Sorteo - Administrador"
     html_parts = [
         "<!doctype html><html><body style=\"font-family:'Segoe UI', Arial, sans-serif; background:#f6f8fb; padding:24px; color:#1d2433;\">",
         "<div style=\"max-width:560px; margin:0 auto; background:#ffffff; border-radius:14px; padding:24px; box-shadow:0 12px 40px rgba(0,0,0,0.08);\">",
         "<div style=\"font-size:14px; letter-spacing:0.4px; text-transform:uppercase; color:#5f6b7a;\">Administrador</div>",
-        "<h2 style=\"margin:12px 0 10px; font-size:22px; color:#111827;\">Asignaciones Completas</h2>",
+        f"<h2 style=\"margin:12px 0 10px; font-size:22px; color:#111827;\">Asignaciones completas{(' - ' + code) if code else ''}</h2>",
         "<p style='font-size:15px;'>Este correo se envía porque usted es el Administrador del sorteo y contiene todos los resultados. Si desea ver únicamente a quién le ha tocado, por favor revise el otro correo.</p>",
         "<table style='width:100%; border-collapse:collapse; margin-top:10px; font-size:15px;'>",
         "<thead><tr><th style='text-align:left; padding:8px 10px; color:#6b7280;'>Entrega</th><th style='text-align:left; padding:8px 10px; color:#6b7280;'>Para</th></tr></thead>",
@@ -255,8 +298,13 @@ def build_admin_email(
             html_parts.append(f"<div style='margin:4px 0;'><strong>Mensaje:</strong> {note}</div>")
         html_parts.append("</div>")
 
+    if admin_link:
+        html_parts.append(
+            f"<p style='margin-top:16px;'><a href='{admin_link}' style='color:#0ea5e9; font-weight:600;'>Ver sorteo completo o reenviar correos</a></p>"
+        )
+
     html_parts.append(
-        f"<p style='margin-top:16px; font-size:13px; color:#6b7280;'>Enviado por {sender_name} via Sorty.</p>"
+        f"<p style='margin-top:16px; font-size:13px; color:#6b7280;'>Enviado por {sender_name}.</p>"
     )
     html_parts.append("</div></body></html>")
 
@@ -277,6 +325,10 @@ def build_admin_email(
             if giver and receiver:
                 text_lines.append(f"- {giver['name']} no regala a {receiver['name']}")
 
+    if admin_link:
+        text_lines.append("")
+        text_lines.append(f"Ver sorteo: {admin_link}")
+
     html_body = "".join(html_parts)
     text_body = "\n".join(text_lines)
     return subject, html_body, text_body
@@ -288,13 +340,14 @@ def dispatch_emails(
     meta: dict,
     exclusions: List[Tuple[str, str]],
     mode_override: Optional[str] = None,
+    admin_link: Optional[str] = None,
 ) -> Dict[str, object]:
     mode = (mode_override or os.getenv("EMAIL_MODE", "smtp")).lower()
     sender_email = os.getenv("SMTP_FROM_EMAIL") or os.getenv("SMTP_USER") or "sorty@example.com"
     sender_name = os.getenv("SMTP_FROM_NAME") or "Sorty"
 
     admin = next(p for p in participants if p["is_admin"])
-    admin_contact = f"{admin['name']} ({admin['email']})"
+    admin_contact = admin["name"]
     by_email = {p["email"]: p for p in participants}
 
     messages: List[EmailMessage] = []
@@ -313,7 +366,7 @@ def dispatch_emails(
         messages.append(msg)
 
     admin_subject, admin_html, admin_text = build_admin_email(
-        assignments, participants, meta, sender_name, exclusions
+        assignments, participants, meta, sender_name, exclusions, admin_link, code=meta.get("code")
     )
     admin_msg = EmailMessage()
     admin_msg["Subject"] = admin_subject
@@ -349,7 +402,205 @@ def dispatch_emails(
         for msg in messages:
             server.send_message(msg)
 
-    return {"mode": mode, "sent": True, "emails": len(messages)}
+        return {"mode": mode, "sent": True, "emails": len(messages)}
+
+
+def send_simple_email(
+    to_email: str,
+    to_name: str,
+    subject: str,
+    text_body: str,
+    html_body: Optional[str] = None,
+    mode_override: Optional[str] = None,
+) -> Dict[str, object]:
+    mode = (mode_override or os.getenv("EMAIL_MODE", "smtp")).lower()
+    sender_email = os.getenv("SMTP_FROM_EMAIL") or os.getenv("SMTP_USER") or "sorty@example.com"
+    sender_name = os.getenv("SMTP_FROM_NAME") or "Sorty"
+
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = formataddr((sender_name, sender_email))
+    msg["To"] = formataddr((to_name, to_email))
+    msg.set_content(text_body)
+    if html_body:
+        msg.add_alternative(html_body, subtype="html")
+
+    if mode == "console":
+        print("\n" + "-" * 60)
+        print(f"To: {msg['To']}")
+        print(f"Subject: {msg['Subject']}")
+        print(msg.get_content())
+        return {"mode": mode, "sent": False, "emails": 1}
+
+    if mode != "smtp":
+        raise AppError(f"EMAIL_MODE desconocido: {mode}")
+
+    host = os.getenv("SMTP_HOST", "smtp.gmail.com")
+    port = int(os.getenv("SMTP_PORT", "587"))
+    user = os.getenv("SMTP_USER")
+    password = os.getenv("SMTP_PASS")
+
+    if not user or not password:
+        raise AppError("Faltan credenciales SMTP: define SMTP_USER y SMTP_PASS.")
+
+    context = ssl.create_default_context()
+    with smtplib.SMTP(host, port, timeout=30) as server:
+        server.starttls(context=context)
+        server.login(user, password)
+        server.send_message(msg)
+
+    return {"mode": mode, "sent": True, "emails": 1}
+
+
+def build_sorteo_link(sorteo: Sorteo) -> str:
+    """Return an absolute link to the stored draw (sorteo)."""
+    base = (os.getenv("PUBLIC_APP_URL") or "").strip().rstrip("/")
+    if not base:
+        try:
+            base = (request.url_root or "").rstrip("/")
+        except RuntimeError:
+            base = "http://localhost:5000"
+    return f"{base}/sorteo/{sorteo.code}"
+
+
+def load_draw_data(code: str) -> Tuple[Sorteo, dict]:
+    """Fetch draw data (participants, exclusions, assignments) by code or UUID."""
+    query = Sorteo.query.options(
+        joinedload(Sorteo.participantes).joinedload(Participante.exclusiones),
+        joinedload(Sorteo.asignaciones).joinedload(Asignacion.giver),
+        joinedload(Sorteo.asignaciones).joinedload(Asignacion.receiver),
+    )
+
+    sorteo = query.filter(Sorteo.code == code).first()
+    if not sorteo:
+        try:
+            sorteo = query.filter(Sorteo.public_id == uuid.UUID(code)).first()
+        except ValueError:
+            sorteo = None
+    if not sorteo:
+        raise AppError("Sorteo no encontrado.")
+
+    participants = []
+    for p in sorteo.participantes:
+        participants.append(
+            {"id": p.id, "name": p.nombre, "email": p.email, "is_admin": p.email.lower() == sorteo.email_admin.lower()}
+        )
+
+    exclusions: List[Tuple[str, str]] = []
+    for p in sorteo.participantes:
+        for excl in p.exclusiones:
+            exclusions.append((p.email, excl.email))
+
+    assignments: Dict[str, str] = {}
+    for a in sorteo.asignaciones:
+        assignments[a.giver.email] = a.receiver.email
+
+    payload = {
+        "id": str(sorteo.public_id),
+        "code": sorteo.code,
+        "name": sorteo.nombre,
+        "email_admin": sorteo.email_admin,
+        "participants": participants,
+        "exclusions": exclusions,
+        "assignments": [
+            {
+                "giver_email": giver,
+                "receiver_email": receiver,
+                "giver_name": next((p["name"] for p in participants if p["email"] == giver), giver),
+                "receiver_name": next((p["name"] for p in participants if p["email"] == receiver), receiver),
+            }
+            for giver, receiver in assignments.items()
+        ],
+    }
+    return sorteo, payload
+
+
+def update_participant_email(sorteo: Sorteo, participant_id: int, new_email: str, notify_previous: bool) -> dict:
+    new_email_norm = normalize_email(new_email)
+    if "@" not in new_email_norm or "." not in new_email_norm:
+        raise AppError("Email invalido.")
+
+    participant = next((p for p in sorteo.participantes if p.id == participant_id), None)
+    if not participant:
+        raise AppError("Participante no encontrado en este sorteo.")
+
+    if any(p.email.lower() == new_email_norm and p.id != participant.id for p in sorteo.participantes):
+        raise AppError("Ya existe un participante con ese email.")
+
+    old_email = participant.email
+    participant.email = new_email_norm
+
+    admin_email_updated = False
+    if sorteo.email_admin.lower() == old_email.lower():
+        sorteo.email_admin = new_email_norm
+        admin_email_updated = True
+
+    db.session.commit()
+
+    notified = False
+    if notify_previous and old_email.lower() != new_email_norm.lower():
+        admin_contact = f"{sorteo.nombre} ({sorteo.email_admin})"
+        subject = "Correccion de correo - Sorty"
+        text_body = (
+            f"Hola,\n\n"
+            f"Se registró una corrección de correo para el sorteo '{sorteo.nombre}'.\n"
+            f"Por favor, desestima el correo anterior enviado a esta dirección.\n"
+            f"Si necesitas ayuda, contacta a {admin_contact}.\n"
+        )
+        html_body = (
+            "<!doctype html><html><body style=\"font-family:'Segoe UI', Arial, sans-serif; background:#f6f8fb; padding:24px; color:#1d2433;\">"
+            f"<div style='max-width:520px; margin:0 auto; background:#ffffff; border-radius:12px; padding:20px; box-shadow:0 10px 30px rgba(0,0,0,0.08);'>"
+            f"<h2 style='margin:0 0 12px; font-size:22px; color:#111827;'>Correccion de correo</h2>"
+            f"<p style='margin:8px 0; font-size:15px;'>El Administrador ajustó la dirección del sorteo <strong>{sorteo.nombre}</strong>.</p>"
+            f"<p style='margin:8px 0; font-size:15px;'>Por favor desestima el correo anterior enviado a esta dirección.</p>"
+            f"<p style='margin:14px 0; font-size:14px; color:#4b5563;'>Si necesitas algo, contacta a {admin_contact}.</p>"
+            f"</div></body></html>"
+        )
+        send_simple_email(old_email, participant.nombre, subject, text_body, html_body)
+        notified = True
+
+    return {
+        "id": participant.id,
+        "name": participant.nombre,
+        "email": participant.email,
+        "is_admin": participant.email.lower() == sorteo.email_admin.lower(),
+        "notified_previous": notified,
+        "admin_email_updated": admin_email_updated,
+    }
+
+
+def save_draw_to_db(
+    participants: List[dict],
+    exclusions: List[Tuple[str, str]],
+    assignments: Dict[str, str],
+    meta: dict,
+) -> Sorteo:
+    """Persist the draw, participants, exclusions and assignments."""
+    admin = meta.get("admin") or next(p for p in participants if p["is_admin"])
+    name = (meta.get("name") or "").strip() or f"Sorteo de {admin['name']}"
+
+    sorteo = Sorteo(nombre=name, email_admin=admin["email"], estado="finalizado")
+    db.session.add(sorteo)
+
+    by_email: Dict[str, Participante] = {}
+    for p in participants:
+        record = Participante(sorteo=sorteo, nombre=p["name"], email=p["email"])
+        db.session.add(record)
+        by_email[p["email"]] = record
+
+    for giver_email, receiver_email in exclusions:
+        giver = by_email.get(giver_email)
+        receiver = by_email.get(receiver_email)
+        if giver and receiver:
+            giver.exclusiones.append(receiver)
+
+    for giver_email, receiver_email in assignments.items():
+        giver = by_email[giver_email]
+        receiver = by_email[receiver_email]
+        db.session.add(Asignacion(sorteo=sorteo, giver=giver, receiver=receiver))
+
+    db.session.commit()
+    return sorteo
 
 
 def assignment_for_client(assignments: Dict[str, str], participants: List[dict]) -> List[dict]:
@@ -375,7 +626,26 @@ def index():
     return render_template("index.html", email_mode=email_mode)
 
 
-@app.route("/api/draw", methods=["POST"])
+@app.route("/favicon.ico")
+def favicon():
+    return send_from_directory(app.static_folder, "sorty_logo.png", mimetype="image/png")
+
+
+@app.route("/sorteo/<code>", methods=["GET"])
+@app.route("/draw/<code>", methods=["GET"])  # alias antiguo
+def sorteo_view(code: str):
+    try:
+        sorteo, data = load_draw_data(code)
+    except AppError as exc:
+        return render_template("sorteo.html", error=str(exc), data=None), 404
+    except Exception:
+        return render_template("sorteo.html", error="Error interno al cargar el sorteo.", data=None), 500
+
+    return render_template("sorteo.html", data=data, draw_link=build_sorteo_link(sorteo))
+
+
+@app.route("/api/sorteo", methods=["POST"])
+@app.route("/api/draw", methods=["POST"])  # alias antiguo
 def api_draw():
     payload = request.get_json(force=True) or {}
     send_emails = bool(payload.get("send"))
@@ -400,9 +670,21 @@ def api_draw():
             "admin": admin,
         }
 
+        sorteo_record = None
+        draw_link = None
+        try:
+            sorteo_record = save_draw_to_db(participants, exclusions, assignments, meta_clean)
+            draw_link = build_sorteo_link(sorteo_record)
+            meta_clean["code"] = sorteo_record.code
+        except Exception:
+            db.session.rollback()
+            raise
+
         email_status = None
         if send_emails:
-            email_status = dispatch_emails(participants, assignments, meta_clean, exclusions, mode_override)
+            email_status = dispatch_emails(
+                participants, assignments, meta_clean, exclusions, mode_override, admin_link=draw_link
+            )
 
         response = {
             "ok": True,
@@ -410,12 +692,80 @@ def api_draw():
             "assignment": assignment_for_client(assignments, participants),
             "email_status": email_status,
             "mode": mode_override or os.getenv("EMAIL_MODE", "smtp"),
+            "draw_id": str(sorteo_record.public_id) if sorteo_record else None,
+            "draw_code": sorteo_record.code if sorteo_record else None,
+            "draw_link": draw_link,
+            "sorteo_link": draw_link,
         }
         return jsonify(response)
 
     except AppError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
     except Exception as exc:  # pragma: no cover - safety net
+        return jsonify({"ok": False, "error": "Error inesperado en el servidor."}), 500
+
+
+@app.route("/api/sorteo/<code>", methods=["GET"])
+@app.route("/api/draw/<code>", methods=["GET"])  # alias antiguo
+def api_draw_get(code: str):
+    try:
+        _, data = load_draw_data(code)
+        return jsonify({"ok": True, "draw": data})
+    except AppError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 404
+    except Exception:
+        return jsonify({"ok": False, "error": "Error inesperado en el servidor."}), 500
+
+
+@app.route("/api/sorteo/<code>/resend", methods=["POST"])
+@app.route("/api/draw/<code>/resend", methods=["POST"])  # alias antiguo
+def api_draw_resend(code: str):
+    payload = request.get_json(silent=True) or {}
+    mode_override = (payload.get("mode") or "").strip().lower() or None
+    try:
+        sorteo, data = load_draw_data(code)
+        participants = data["participants"]
+        exclusions = data["exclusions"]
+        assignments = {item["giver_email"]: item["receiver_email"] for item in data["assignments"]}
+
+        admin = next((p for p in participants if p["is_admin"]), None)
+        if not admin:
+            raise AppError("No se encontro Administrador para este sorteo.")
+
+        meta_clean = {
+            "budget": "",
+            "deadline": "",
+            "note": "",
+            "admin": admin,
+        }
+        email_status = dispatch_emails(
+            participants,
+            assignments,
+            meta_clean,
+            exclusions,
+            mode_override,
+            admin_link=build_sorteo_link(sorteo),
+        )
+        return jsonify({"ok": True, "message": "Correos reenviados.", "email_status": email_status})
+    except AppError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception:
+        return jsonify({"ok": False, "error": "Error inesperado en el servidor."}), 500
+
+
+@app.route("/api/sorteo/<code>/participant/<int:participant_id>/email", methods=["PATCH"])
+@app.route("/api/draw/<code>/participant/<int:participant_id>/email", methods=["PATCH"])  # alias antiguo
+def api_draw_update_email(code: str, participant_id: int):
+    payload = request.get_json(force=True) or {}
+    new_email = (payload.get("email") or "").strip()
+    notify_previous = bool(payload.get("notify_previous"))
+    try:
+        sorteo, _ = load_draw_data(code)
+        updated = update_participant_email(sorteo, participant_id, new_email, notify_previous)
+        return jsonify({"ok": True, "participant": updated})
+    except AppError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception:
         return jsonify({"ok": False, "error": "Error inesperado en el servidor."}), 500
 
 
