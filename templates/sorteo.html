@@ -49,36 +49,9 @@
         </div>
 
         <div class="actions-row wrap">
-          <button class="btn primary" id="resend-btn">Reenviar correos</button>
           <button class="btn ghost" id="copy-link">Copiar enlace</button>
+          <button class="btn primary" id="resend-btn">Reenviar correos</button>
           <div id="action-msg" class="muted"></div>
-        </div>
-
-        <div class="panel">
-          <div class="panel-header">
-            <p class="eyebrow">Participantes</p>
-            <p class="muted small">Editar email no cambia asignaciones; afecta a reenvíos. Puedes avisar al correo anterior.</p>
-          </div>
-          <div class="participant-list">
-            {% for p in data.participants %}
-            <div class="participant-row">
-              <div class="participant-info">
-                <div class="name-line">
-                  <span class="name">{{ p.name }}</span>
-                  {% if p.is_admin %}<span class="tag">Admin</span>{% endif %}
-                </div>
-                <div class="muted email">{{ p.email }}</div>
-              </div>
-              <div class="participant-actions">
-                <input type="email" value="{{ p.email }}" data-participant-id="{{ p.id }}" class="input sm email-input">
-                <label class="inline-checkbox">
-                  <input type="checkbox" data-notify-id="{{ p.id }}"> Notificar correo anterior
-                </label>
-                <button class="btn ghost save-email" data-participant-id="{{ p.id }}">Guardar</button>
-              </div>
-            </div>
-            {% endfor %}
-          </div>
         </div>
 
         <div class="panel">
@@ -102,6 +75,36 @@
             </table>
           </div>
         </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <p class="eyebrow">Participantes</p>
+            <p class="muted small">Editar email no cambia asignaciones; afecta a reenvíos. Puedes avisar al correo anterior.</p>
+          </div>
+          <div class="participant-list">
+            {% for p in data.participants %}
+            <div class="participant-row">
+              <div class="participant-info">
+                <div class="name-line">
+                  <span class="name">{{ p.name }}</span>
+                  {% if p.is_admin %}<span class="tag">Admin</span>{% endif %}
+                </div>
+                <div class="muted email">{{ p.email }}</div>
+              </div>
+              <div class="participant-actions">
+                <input type="email" value="{{ p.email }}" data-participant-id="{{ p.id }}" class="input sm email-input" disabled>
+                <label class="inline-checkbox">
+                  <input type="checkbox" data-notify-id="{{ p.id }}" disabled> Notificar correo anterior
+                </label>
+                <div class="action-buttons">
+                  <button class="btn ghost edit-email" data-participant-id="{{ p.id }}">Editar</button>
+                  <button class="btn primary save-email" data-participant-id="{{ p.id }}" disabled>Guardar</button>
+                </div>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
       {% endif %}
     </section>
   </main>
@@ -114,13 +117,13 @@
     const themeToggle = document.getElementById("theme-toggle");
     function setTheme(value) {
       const theme = value === "dark" ? "dark" : "light";
-      body.classList.toggle("dark", theme === "dark");
+      body.classList.toggle("theme-dark", theme === "dark");
       localStorage.setItem(themeKey, theme);
     }
     setTheme(savedTheme);
     if (themeToggle) {
       themeToggle.addEventListener("click", () => {
-        const next = body.classList.contains("dark") ? "light" : "dark";
+        const next = body.classList.contains("theme-dark") ? "light" : "dark";
         setTheme(next);
       });
     }
@@ -131,10 +134,21 @@
     const drawCode = "{{ data.code }}";
     const drawLink = "{{ draw_link }}";
 
-    function setMessage(text, cls="") {
+    function setMessage(text, cls = "") {
       if (!msg) return;
       msg.textContent = text;
       msg.className = cls ? cls : "muted";
+    }
+
+    if (copyBtn) {
+      copyBtn.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(drawLink);
+          setMessage("Enlace copiado.", "success");
+        } catch {
+          setMessage("No se pudo copiar el enlace.", "error");
+        }
+      });
     }
 
     if (resendBtn) {
@@ -158,12 +172,27 @@
       });
     }
 
+    const editButtons = document.querySelectorAll(".edit-email");
     const saveButtons = document.querySelectorAll(".save-email");
+    editButtons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const pid = btn.getAttribute("data-participant-id");
+        const input = document.querySelector(`input[data-participant-id='${pid}']`);
+        const notify = document.querySelector(`input[data-notify-id='${pid}']`);
+        const saveBtn = document.querySelector(`button.save-email[data-participant-id='${pid}']`);
+        if (!input || !saveBtn) return;
+        input.disabled = false;
+        if (notify) notify.disabled = false;
+        saveBtn.disabled = false;
+        input.focus();
+        input.select();
+      });
+    });
     saveButtons.forEach((btn) => {
       btn.addEventListener("click", async () => {
         const pid = btn.getAttribute("data-participant-id");
-        const input = document.querySelector(\`input[data-participant-id='\${pid}']\`);
-        const notify = document.querySelector(\`input[data-notify-id='\${pid}']\`);
+        const input = document.querySelector(`input[data-participant-id='${pid}']`);
+        const notify = document.querySelector(`input[data-notify-id='${pid}']`);
         if (!input) return;
         const email = input.value.trim();
         setMessage("Guardando email...", "muted");
@@ -177,25 +206,15 @@
           const data = await res.json();
           if (!res.ok || !data?.ok) throw new Error(data?.error || "Error al guardar.");
           input.value = data.participant.email;
+          input.disabled = true;
+          if (notify) notify.disabled = true;
+          btn.disabled = true;
           setMessage("Email actualizado. Reenvía cuando quieras.", "success");
         } catch (err) {
           setMessage(err.message || "Error al guardar.", "error");
-        } finally {
-          btn.disabled = false;
         }
       });
     });
-
-    if (copyBtn) {
-      copyBtn.addEventListener("click", async () => {
-        try {
-          await navigator.clipboard.writeText(drawLink);
-          setMessage("Enlace copiado.", "success");
-        } catch {
-          setMessage("No se pudo copiar el enlace.", "error");
-        }
-      });
-    }
   </script>
   {% endif %}
 </body>

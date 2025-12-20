@@ -1578,6 +1578,11 @@ th {
   margin-left: auto;
 }
 
+.action-buttons {
+  display: inline-flex;
+  gap: 8px;
+}
+
 .actions-row.wrap {
   flex-wrap: wrap;
   margin: 12px 0;
