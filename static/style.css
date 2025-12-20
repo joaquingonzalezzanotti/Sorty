@@ -1348,6 +1348,12 @@ th {
   cursor: not-allowed;
 }
 
+.button.sm {
+  padding: 8px 12px;
+  font-size: 14px;
+  border-radius: 10px;
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);
