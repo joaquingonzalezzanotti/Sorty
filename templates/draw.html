@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sorty - Sorteo</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <style>
+    body { background:#0b1220; color:#e5ecf5; }
+    .draw-shell { max-width: 900px; margin: 32px auto; background:#0f172a; border:1px solid #1f2a44; border-radius:14px; padding:24px; box-shadow:0 18px 60px rgba(0,0,0,0.35); }
+    .draw-header { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+    .draw-title { font-size:22px; font-weight:700; color:#f8fafc; }
+    .badge { display:inline-block; padding:4px 10px; border-radius:10px; background:#13253f; color:#7dd3fc; font-size:13px; }
+    .section { margin-top:18px; padding:14px; background:#0b1426; border:1px solid #14233c; border-radius:12px; }
+    table { width:100%; border-collapse:collapse; }
+    th, td { padding:10px; border-bottom:1px solid #13253f; text-align:left; }
+    th { color:#94a3b8; font-weight:600; font-size:13px; text-transform:uppercase; letter-spacing:0.5px; }
+    td { color:#e2e8f0; }
+    .actions { display:flex; gap:8px; align-items:center; margin-top:8px; flex-wrap:wrap; }
+    .btn { background:#0ea5e9; color:white; border:none; border-radius:10px; padding:10px 14px; font-weight:600; cursor:pointer; transition:opacity 0.15s ease; }
+    .btn:hover { opacity:0.9; }
+    .btn.secondary { background:#1f2937; color:#cbd5e1; border:1px solid #2a3648; }
+    .muted { color:#94a3b8; font-size:14px; margin-top:6px; }
+    .error { color:#fca5a5; margin-top:12px; }
+    .success { color:#34d399; margin-top:12px; }
+  </style>
+</head>
+<body>
+  <div class="draw-shell">
+    {% if error %}
+      <h1 class="draw-title">Sorteo no disponible</h1>
+      <p class="error">{{ error }}</p>
+    {% elif data %}
+      <div class="draw-header">
+        <div>
+          <div class="draw-title">{{ data.name or "Sorteo" }}</div>
+          <div class="muted">Código: {{ data.code }} · Admin: {{ data.email_admin }}</div>
+        </div>
+        <div class="badge">Vista de Administrador</div>
+      </div>
+
+      <div class="section">
+        <h3 style="margin:0 0 8px; color:#e5ecf5;">Participantes</h3>
+        <table>
+          <thead><tr><th>Nombre</th><th>Email</th><th>Administrador</th><th>Editar email</th></tr></thead>
+          <tbody>
+            {% for p in data.participants %}
+              <tr>
+                <td>{{ p.name }}</td>
+                <td>{{ p.email }}</td>
+                <td>{{ "Sí" if p.is_admin else "No" }}</td>
+                <td>
+                  <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                    <input type="email" value="{{ p.email }}" data-participant-id="{{ p.id }}" class="email-input" style="padding:8px 10px; border-radius:8px; border:1px solid #1f2a44; background:#0b1426; color:#e5ecf5; min-width:200px;">
+                    <label style="display:flex; align-items:center; gap:6px; color:#cbd5e1; font-size:13px;">
+                      <input type="checkbox" data-notify-id="{{ p.id }}"> Notificar al correo anterior
+                    </label>
+                    <button class="btn secondary save-email" data-participant-id="{{ p.id }}">Guardar</button>
+                  </div>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <p class="muted" style="margin-top:10px;">Advertencia: cambiar el email no modifica las asignaciones; solo afecta a los reenvíos. Puedes avisar al correo anterior para que desestime el mensaje previo.</p>
+      </div>
+
+      <div class="section">
+        <h3 style="margin:0 0 8px; color:#e5ecf5;">Asignaciones</h3>
+        <table>
+          <thead><tr><th>Entrega</th><th>Para</th></tr></thead>
+          <tbody>
+            {% for a in data.assignments %}
+              <tr>
+                <td>{{ a.giver_name }} ({{ a.giver_email }})</td>
+                <td>{{ a.receiver_name }} ({{ a.receiver_email }})</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="section">
+        <h3 style="margin:0 0 8px; color:#e5ecf5;">Acciones</h3>
+        <div class="actions">
+          <button class="btn" id="resend-btn">Reenviar correos</button>
+          <button class="btn secondary" id="copy-link">Copiar enlace</button>
+        </div>
+        <div class="muted">El reenviado usa los datos actuales de este sorteo guardado.</div>
+        <div id="action-msg" class="muted"></div>
+      </div>
+    {% endif %}
+  </div>
+
+  {% if data %}
+  <script>
+    const resendBtn = document.getElementById("resend-btn");
+    const copyBtn = document.getElementById("copy-link");
+    const msg = document.getElementById("action-msg");
+    const drawCode = "{{ data.code }}";
+    const drawLink = "{{ draw_link }}";
+
+    function setMessage(text, cls="") {
+      if (!msg) return;
+      msg.textContent = text;
+      msg.className = cls ? cls : "muted";
+    }
+
+    if (resendBtn) {
+      resendBtn.addEventListener("click", async () => {
+        setMessage("Reenviando correos...", "muted");
+        resendBtn.disabled = true;
+        try {
+          const res = await fetch(`/api/sorteo/${drawCode}/resend`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({}),
+          });
+          const data = await res.json();
+          if (!res.ok || !data?.ok) throw new Error(data?.error || "Error al reenviar.");
+          setMessage("Correos reenviados.", "success");
+        } catch (err) {
+          setMessage(err.message || "Error al reenviar.", "error");
+        } finally {
+          resendBtn.disabled = false;
+        }
+      });
+    }
+
+    const saveButtons = document.querySelectorAll(".save-email");
+    saveButtons.forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const pid = btn.getAttribute("data-participant-id");
+        const input = document.querySelector(`input[data-participant-id='${pid}']`);
+        const notify = document.querySelector(`input[data-notify-id='${pid}']`);
+        if (!input) return;
+        const email = input.value.trim();
+        setMessage("Guardando email...", "muted");
+        btn.disabled = true;
+        try {
+          const res = await fetch(`/api/sorteo/${drawCode}/participant/${pid}/email`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, notify_previous: notify?.checked }),
+          });
+          const data = await res.json();
+          if (!res.ok || !data?.ok) throw new Error(data?.error || "Error al guardar.");
+          input.value = data.participant.email;
+          setMessage("Email actualizado. Reenvía cuando quieras.", "success");
+        } catch (err) {
+          setMessage(err.message || "Error al guardar.", "error");
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    });
+
+    if (copyBtn) {
+      copyBtn.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(drawLink);
+          setMessage("Enlace copiado.", "success");
+        } catch {
+          setMessage("No se pudo copiar el enlace.", "error");
+        }
+      });
+    }
+  </script>
+  {% endif %}
+</body>
+</html>

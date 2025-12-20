@@ -588,7 +588,7 @@ async function submitDraw(send) {
   let showSuccessOverlay = false;
   let count = null;
   try {
-    const res = await fetch("/api/draw", {
+    const res = await fetch("/api/sorteo", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
