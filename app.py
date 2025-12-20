@@ -8,7 +8,7 @@ from email.message import EmailMessage
 from email.utils import formataddr
 from typing import Dict, List, Optional, Set, Tuple
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, send_from_directory
 
 from models import Asignacion, Participante, Sorteo, db
 
@@ -392,6 +392,11 @@ def assignment_for_client(assignments: Dict[str, str], participants: List[dict])
 def index():
     email_mode = os.getenv("EMAIL_MODE", "smtp").lower()
     return render_template("index.html", email_mode=email_mode)
+
+
+@app.route("/favicon.ico")
+def favicon():
+    return send_from_directory(app.static_folder, "sorty_logo.png", mimetype="image/png")
 
 
 @app.route("/api/draw", methods=["POST"])
