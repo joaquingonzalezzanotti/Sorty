@@ -380,6 +380,40 @@ def dispatch_emails(
     return {"mode": mode, "sent": True, "emails": len(messages)}
 
 
+def save_draw_to_db(
+    participants: List[dict],
+    exclusions: List[Tuple[str, str]],
+    assignments: Dict[str, str],
+    meta: dict,
+) -> Sorteo:
+    """Persist the draw, participants, exclusions and assignments."""
+    admin = meta.get("admin") or next(p for p in participants if p["is_admin"])
+    name = (meta.get("name") or "").strip() or f"Sorteo de {admin['name']}"
+
+    sorteo = Sorteo(nombre=name, email_admin=admin["email"], estado="finalizado")
+    db.session.add(sorteo)
+
+    by_email: Dict[str, Participante] = {}
+    for p in participants:
+        record = Participante(sorteo=sorteo, nombre=p["name"], email=p["email"])
+        db.session.add(record)
+        by_email[p["email"]] = record
+
+    for giver_email, receiver_email in exclusions:
+        giver = by_email.get(giver_email)
+        receiver = by_email.get(receiver_email)
+        if giver and receiver:
+            giver.exclusiones.append(receiver)
+
+    for giver_email, receiver_email in assignments.items():
+        giver = by_email[giver_email]
+        receiver = by_email[receiver_email]
+        db.session.add(Asignacion(sorteo=sorteo, giver=giver, receiver=receiver))
+
+    db.session.commit()
+    return sorteo
+
+
 def assignment_for_client(assignments: Dict[str, str], participants: List[dict]) -> List[dict]:
     by_email = {p["email"]: p for p in participants}
     rendered = []
@@ -433,6 +467,13 @@ def api_draw():
             "admin": admin,
         }
 
+        sorteo_record = None
+        try:
+            sorteo_record = save_draw_to_db(participants, exclusions, assignments, meta_clean)
+        except Exception:
+            db.session.rollback()
+            raise
+
         email_status = None
         if send_emails:
             email_status = dispatch_emails(participants, assignments, meta_clean, exclusions, mode_override)
@@ -443,6 +484,7 @@ def api_draw():
             "assignment": assignment_for_client(assignments, participants),
             "email_status": email_status,
             "mode": mode_override or os.getenv("EMAIL_MODE", "smtp"),
+            "draw_id": str(sorteo_record.public_id) if sorteo_record else None,
         }
         return jsonify(response)
 
