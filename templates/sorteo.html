@@ -33,24 +33,22 @@
     </div>
   </nav>
 
-  <main class="page">
-    <section class="card" style="max-width: 1080px; margin: 24px auto; padding: 20px;">
+  <main class="page admin-page">
+    <section class="card admin-card">
       {% if error %}
-        <h1 style="margin-bottom:12px;">Sorteo no disponible</h1>
+        <h1 class="page-title">Sorteo no disponible</h1>
         <p class="muted">{{ error }}</p>
       {% elif data %}
-        <div class="section-header">
+        <div class="admin-hero">
           <div>
             <p class="eyebrow">Vista de Administrador</p>
-            <h1 style="margin:4px 0 6px;">{{ data.name or "Sorteo" }}</h1>
+            <h1 class="page-title">{{ data.name or "Sorteo" }}</h1>
             <p class="muted">Código: {{ data.code }} · Admin: {{ data.email_admin }}</p>
           </div>
-          <div class="chip">Enlace directo listo para compartir</div>
+          <div class="pill">Enlace directo listo para compartir</div>
         </div>
 
-        <div class="divider"></div>
-
-        <div class="actions-row" style="margin-bottom:12px; gap: 10px; flex-wrap: wrap;">
+        <div class="actions-row wrap">
           <button class="btn primary" id="resend-btn">Reenviar correos</button>
           <button class="btn ghost" id="copy-link">Copiar enlace</button>
           <div id="action-msg" class="muted"></div>
@@ -61,35 +59,25 @@
             <p class="eyebrow">Participantes</p>
             <p class="muted small">Editar email no cambia asignaciones; afecta a reenvíos. Puedes avisar al correo anterior.</p>
           </div>
-          <div class="table-container">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Nombre</th>
-                  <th>Email</th>
-                  <th>Administrador</th>
-                  <th>Editar email</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for p in data.participants %}
-                <tr>
-                  <td>{{ p.name }}</td>
-                  <td>{{ p.email }}</td>
-                  <td>{{ "Sí" if p.is_admin else "No" }}</td>
-                  <td>
-                    <div class="flex-row">
-                      <input type="email" value="{{ p.email }}" data-participant-id="{{ p.id }}" class="input sm email-input">
-                      <label class="inline-checkbox">
-                        <input type="checkbox" data-notify-id="{{ p.id }}"> Notificar correo anterior
-                      </label>
-                      <button class="btn ghost save-email" data-participant-id="{{ p.id }}">Guardar</button>
-                    </div>
-                  </td>
-                </tr>
-                {% endfor %}
-              </tbody>
-            </table>
+          <div class="participant-list">
+            {% for p in data.participants %}
+            <div class="participant-row">
+              <div class="participant-info">
+                <div class="name-line">
+                  <span class="name">{{ p.name }}</span>
+                  {% if p.is_admin %}<span class="tag">Admin</span>{% endif %}
+                </div>
+                <div class="muted email">{{ p.email }}</div>
+              </div>
+              <div class="participant-actions">
+                <input type="email" value="{{ p.email }}" data-participant-id="{{ p.id }}" class="input sm email-input">
+                <label class="inline-checkbox">
+                  <input type="checkbox" data-notify-id="{{ p.id }}"> Notificar correo anterior
+                </label>
+                <button class="btn ghost save-email" data-participant-id="{{ p.id }}">Guardar</button>
+              </div>
+            </div>
+            {% endfor %}
           </div>
         </div>
 

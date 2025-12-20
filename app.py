@@ -168,6 +168,8 @@ def build_participant_email(
             base = (request.url_root or "").rstrip("/")
         except RuntimeError:
             base = "http://localhost:5000"
+    if base.startswith("http://"):
+        base = "https://" + base[len("http://") :]
     logo_url = f"{base}/static/sorty_logo.png"
 
     subject_line = "Tu sorteo (Sorty)" + (f" - Entrega antes de {deadline}" if deadline else "")
@@ -225,7 +227,7 @@ def build_participant_email(
         "</div>"
     )
     html_parts.append(
-        f"<p style=\"margin-top:14px; font-size:13px; color:#6b7280;\">Enviado por {sender_name} via Sorty.</p>"
+        f"<p style=\"margin-top:14px; font-size:13px; color:#6b7280;\">Enviado por {sender_name}.</p>"
     )
     html_parts.append("</div></body></html>")
 
@@ -302,7 +304,7 @@ def build_admin_email(
         )
 
     html_parts.append(
-        f"<p style='margin-top:16px; font-size:13px; color:#6b7280;'>Enviado por {sender_name} via Sorty.</p>"
+        f"<p style='margin-top:16px; font-size:13px; color:#6b7280;'>Enviado por {sender_name}.</p>"
     )
     html_parts.append("</div></body></html>")
 
