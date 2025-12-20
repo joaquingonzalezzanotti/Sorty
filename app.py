@@ -15,6 +15,15 @@ from models import Asignacion, Participante, Sorteo, db
 
 def resolve_database_uri() -> str:
     """Pick the first available connection string, supporting Vercel + Neon defaults."""
+
+    def normalize(uri: str) -> str:
+        # Force psycopg (psycopg3) driver so we don't need psycopg2 in Vercel.
+        if uri.startswith("postgres://"):
+            return "postgresql+psycopg://" + uri[len("postgres://") :]
+        if uri.startswith("postgresql://"):
+            return uri.replace("postgresql://", "postgresql+psycopg://", 1)
+        return uri
+
     candidates = [
         os.getenv("DATABASE_URL"),
         os.getenv("POSTGRES_PRISMA_URL"),  # Vercel + Neon (pooled)
@@ -23,7 +32,7 @@ def resolve_database_uri() -> str:
     ]
     for uri in candidates:
         if uri:
-            return uri.replace("postgres://", "postgresql://", 1)
+            return normalize(uri)
     return "sqlite:///sorty.db"
 
 
