@@ -13,9 +13,22 @@ from flask import Flask, jsonify, render_template, request
 from models import Asignacion, Participante, Sorteo, db
 
 
+def resolve_database_uri() -> str:
+    """Pick the first available connection string, supporting Vercel + Neon defaults."""
+    candidates = [
+        os.getenv("DATABASE_URL"),
+        os.getenv("POSTGRES_PRISMA_URL"),  # Vercel + Neon (pooled)
+        os.getenv("POSTGRES_URL"),  # Vercel + Neon (pooled)
+        os.getenv("POSTGRES_URL_NON_POOLING"),
+    ]
+    for uri in candidates:
+        if uri:
+            return uri.replace("postgres://", "postgresql://", 1)
+    return "sqlite:///sorty.db"
+
+
 app = Flask(__name__, static_folder="static", template_folder="templates")
-db_uri = os.environ.get("DATABASE2_URL") or os.environ.get("DATABASE_URL") or "sqlite:///sorty.db"
-app.config["SQLALCHEMY_DATABASE_URI"] = db_uri
+app.config["SQLALCHEMY_DATABASE_URI"] = resolve_database_uri()
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 db.init_app(app)
 
