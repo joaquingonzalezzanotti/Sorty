@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sorty - Sorteo</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='sorty_logo.png') }}">
+  <link rel="shortcut icon" type="image/png" href="{{ url_for('static', filename='sorty_logo.png') }}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="page-body">
+  <nav class="topbar">
+    <div class="brand">
+      <img src="{{ url_for('static', filename='sorty_logo.png') }}" alt="Sorty logo" class="brand-logo">
+      <div>
+        <div class="brand-name">Sorty</div>
+        <div class="brand-tag">Tu amigo invisible de confianza</div>
+      </div>
+    </div>
+    <div class="top-links">
+      <span class="nav-link">Sorteo</span>
+      <button id="theme-toggle" class="theme-toggle" aria-label="Cambiar tema">
+        <span class="theme-toggle-track">
+          <span class="theme-toggle-thumb">
+            <span class="theme-toggle-icon sun" aria-hidden="true">☀</span>
+            <span class="theme-toggle-icon moon" aria-hidden="true">☾</span>
+          </span>
+        </span>
+      </button>
+    </div>
+  </nav>
+
+  <main class="page">
+    <section class="card" style="max-width: 1080px; margin: 24px auto; padding: 20px;">
+      {% if error %}
+        <h1 style="margin-bottom:12px;">Sorteo no disponible</h1>
+        <p class="muted">{{ error }}</p>
+      {% elif data %}
+        <div class="section-header">
+          <div>
+            <p class="eyebrow">Vista de Administrador</p>
+            <h1 style="margin:4px 0 6px;">{{ data.name or "Sorteo" }}</h1>
+            <p class="muted">Código: {{ data.code }} · Admin: {{ data.email_admin }}</p>
+          </div>
+          <div class="chip">Enlace directo listo para compartir</div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="actions-row" style="margin-bottom:12px; gap: 10px; flex-wrap: wrap;">
+          <button class="btn primary" id="resend-btn">Reenviar correos</button>
+          <button class="btn ghost" id="copy-link">Copiar enlace</button>
+          <div id="action-msg" class="muted"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <p class="eyebrow">Participantes</p>
+            <p class="muted small">Editar email no cambia asignaciones; afecta a reenvíos. Puedes avisar al correo anterior.</p>
+          </div>
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Nombre</th>
+                  <th>Email</th>
+                  <th>Administrador</th>
+                  <th>Editar email</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for p in data.participants %}
+                <tr>
+                  <td>{{ p.name }}</td>
+                  <td>{{ p.email }}</td>
+                  <td>{{ "Sí" if p.is_admin else "No" }}</td>
+                  <td>
+                    <div class="flex-row">
+                      <input type="email" value="{{ p.email }}" data-participant-id="{{ p.id }}" class="input sm email-input">
+                      <label class="inline-checkbox">
+                        <input type="checkbox" data-notify-id="{{ p.id }}"> Notificar correo anterior
+                      </label>
+                      <button class="btn ghost save-email" data-participant-id="{{ p.id }}">Guardar</button>
+                    </div>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <p class="eyebrow">Asignaciones</p>
+            <p class="muted small">No cambian aunque edites correos; solo afectan reenvíos.</p>
+          </div>
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr><th>Entrega</th><th>Para</th></tr>
+              </thead>
+              <tbody>
+                {% for a in data.assignments %}
+                <tr>
+                  <td>{{ a.giver_name }} ({{ a.giver_email }})</td>
+                  <td>{{ a.receiver_name }} ({{ a.receiver_email }})</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      {% endif %}
+    </section>
+  </main>
+
+  {% if data %}
+  <script>
+    const themeKey = "sorty-theme";
+    const savedTheme = localStorage.getItem(themeKey) || "light";
+    const body = document.querySelector("body");
+    const themeToggle = document.getElementById("theme-toggle");
+    function setTheme(value) {
+      const theme = value === "dark" ? "dark" : "light";
+      body.classList.toggle("dark", theme === "dark");
+      localStorage.setItem(themeKey, theme);
+    }
+    setTheme(savedTheme);
+    if (themeToggle) {
+      themeToggle.addEventListener("click", () => {
+        const next = body.classList.contains("dark") ? "light" : "dark";
+        setTheme(next);
+      });
+    }
+
+    const resendBtn = document.getElementById("resend-btn");
+    const copyBtn = document.getElementById("copy-link");
+    const msg = document.getElementById("action-msg");
+    const drawCode = "{{ data.code }}";
+    const drawLink = "{{ draw_link }}";
+
+    function setMessage(text, cls="") {
+      if (!msg) return;
+      msg.textContent = text;
+      msg.className = cls ? cls : "muted";
+    }
+
+    if (resendBtn) {
+      resendBtn.addEventListener("click", async () => {
+        setMessage("Reenviando correos...", "muted");
+        resendBtn.disabled = true;
+        try {
+          const res = await fetch(`/api/sorteo/${drawCode}/resend`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({}),
+          });
+          const data = await res.json();
+          if (!res.ok || !data?.ok) throw new Error(data?.error || "Error al reenviar.");
+          setMessage("Correos reenviados.", "success");
+        } catch (err) {
+          setMessage(err.message || "Error al reenviar.", "error");
+        } finally {
+          resendBtn.disabled = false;
+        }
+      });
+    }
+
+    const saveButtons = document.querySelectorAll(".save-email");
+    saveButtons.forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const pid = btn.getAttribute("data-participant-id");
+        const input = document.querySelector(\`input[data-participant-id='\${pid}']\`);
+        const notify = document.querySelector(\`input[data-notify-id='\${pid}']\`);
+        if (!input) return;
+        const email = input.value.trim();
+        setMessage("Guardando email...", "muted");
+        btn.disabled = true;
+        try {
+          const res = await fetch(`/api/sorteo/${drawCode}/participant/${pid}/email`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, notify_previous: notify?.checked }),
+          });
+          const data = await res.json();
+          if (!res.ok || !data?.ok) throw new Error(data?.error || "Error al guardar.");
+          input.value = data.participant.email;
+          setMessage("Email actualizado. Reenvía cuando quieras.", "success");
+        } catch (err) {
+          setMessage(err.message || "Error al guardar.", "error");
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    });
+
+    if (copyBtn) {
+      copyBtn.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(drawLink);
+          setMessage("Enlace copiado.", "success");
+        } catch {
+          setMessage("No se pudo copiar el enlace.", "error");
+        }
+      });
+    }
+  </script>
+  {% endif %}
+</body>
+</html>

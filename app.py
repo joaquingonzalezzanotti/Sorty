@@ -162,12 +162,20 @@ def build_participant_email(
     deadline = meta.get("deadline")
     note = meta.get("note")
 
+    base = (os.getenv("PUBLIC_APP_URL") or "").strip().rstrip("/")
+    if not base:
+        try:
+            base = (request.url_root or "").rstrip("/")
+        except RuntimeError:
+            base = "http://localhost:5000"
+    logo_url = f"{base}/static/sorty_logo.png"
+
     subject_line = "Tu sorteo (Sorty)" + (f" - Entrega antes de {deadline}" if deadline else "")
 
     text_lines = [
         f"Hola {giver['name']},",
         "",
-        f"Te toco regalar a: {receiver['name']} ({receiver['email']}).",
+        f"Te toco regalar a: {receiver['name']}.",
     ]
     if budget:
         text_lines.append(f"Presupuesto sugerido: {budget}.")
@@ -190,9 +198,10 @@ def build_participant_email(
         "<html>",
         "<body style=\"font-family:'Segoe UI', Arial, sans-serif; background:#f6f8fb; padding:24px; color:#1d2433;\">",
         "<div style=\"max-width:520px; margin:0 auto; background:#ffffff; border-radius:14px; padding:24px; box-shadow:0 12px 40px rgba(0,0,0,0.08);\">",
+        f"<div style='text-align:center; margin-bottom:10px;'><img src=\"{logo_url}\" alt=\"Sorty\" width=\"72\" style=\"display:inline-block;\"></div>",
         f"<div style=\"font-size:14px; letter-spacing:0.4px; text-transform:uppercase; color:#5f6b7a;\">Sorty</div>",
         f"<h2 style=\"margin:12px 0 10px; font-size:24px; color:#111827;\">Hola {giver['name']},</h2>",
-        f"<p style=\"font-size:16px; line-height:1.6; margin:12px 0;\">Te toco regalar a <strong>{receiver['name']}</strong> (<a style=\"color:#0e7490; text-decoration:none;\" href=\"mailto:{receiver['email']}\">{receiver['email']}</a>).</p>",
+        f"<p style=\"font-size:16px; line-height:1.6; margin:12px 0;\">Te toco regalar a <strong>{receiver['name']}</strong>.</p>",
     ]
 
     if budget:
@@ -231,6 +240,7 @@ def build_admin_email(
     sender_name: str,
     exclusions: List[Tuple[str, str]],
     admin_link: Optional[str] = None,
+    code: Optional[str] = None,
 ) -> Tuple[str, str, str]:
     budget = meta.get("budget")
     deadline = meta.get("deadline")
@@ -248,12 +258,12 @@ def build_admin_email(
         )
         rows_text.append(f"{giver['name']} -> {receiver['name']} ({receiver['email']})")
 
-    subject = "Resultados del Sorteo - Administrador"
+    subject = f"Resultados del Sorteo - {code}" if code else "Resultados del Sorteo - Administrador"
     html_parts = [
         "<!doctype html><html><body style=\"font-family:'Segoe UI', Arial, sans-serif; background:#f6f8fb; padding:24px; color:#1d2433;\">",
         "<div style=\"max-width:560px; margin:0 auto; background:#ffffff; border-radius:14px; padding:24px; box-shadow:0 12px 40px rgba(0,0,0,0.08);\">",
         "<div style=\"font-size:14px; letter-spacing:0.4px; text-transform:uppercase; color:#5f6b7a;\">Administrador</div>",
-        "<h2 style=\"margin:12px 0 10px; font-size:22px; color:#111827;\">Asignaciones Completas</h2>",
+        f"<h2 style=\"margin:12px 0 10px; font-size:22px; color:#111827;\">Asignaciones completas{(' - ' + code) if code else ''}</h2>",
         "<p style='font-size:15px;'>Este correo se envía porque usted es el Administrador del sorteo y contiene todos los resultados. Si desea ver únicamente a quién le ha tocado, por favor revise el otro correo.</p>",
         "<table style='width:100%; border-collapse:collapse; margin-top:10px; font-size:15px;'>",
         "<thead><tr><th style='text-align:left; padding:8px 10px; color:#6b7280;'>Entrega</th><th style='text-align:left; padding:8px 10px; color:#6b7280;'>Para</th></tr></thead>",
@@ -335,7 +345,7 @@ def dispatch_emails(
     sender_name = os.getenv("SMTP_FROM_NAME") or "Sorty"
 
     admin = next(p for p in participants if p["is_admin"])
-    admin_contact = f"{admin['name']} ({admin['email']})"
+    admin_contact = admin["name"]
     by_email = {p["email"]: p for p in participants}
 
     messages: List[EmailMessage] = []
@@ -354,7 +364,7 @@ def dispatch_emails(
         messages.append(msg)
 
     admin_subject, admin_html, admin_text = build_admin_email(
-        assignments, participants, meta, sender_name, exclusions, admin_link
+        assignments, participants, meta, sender_name, exclusions, admin_link, code=meta.get("code")
     )
     admin_msg = EmailMessage()
     admin_msg["Subject"] = admin_subject
@@ -625,11 +635,11 @@ def sorteo_view(code: str):
     try:
         sorteo, data = load_draw_data(code)
     except AppError as exc:
-        return render_template("draw.html", error=str(exc), data=None), 404
+        return render_template("sorteo.html", error=str(exc), data=None), 404
     except Exception:
-        return render_template("draw.html", error="Error interno al cargar el sorteo.", data=None), 500
+        return render_template("sorteo.html", error="Error interno al cargar el sorteo.", data=None), 500
 
-    return render_template("draw.html", data=data, draw_link=build_sorteo_link(sorteo))
+    return render_template("sorteo.html", data=data, draw_link=build_sorteo_link(sorteo))
 
 
 @app.route("/api/sorteo", methods=["POST"])
@@ -663,6 +673,7 @@ def api_draw():
         try:
             sorteo_record = save_draw_to_db(participants, exclusions, assignments, meta_clean)
             draw_link = build_sorteo_link(sorteo_record)
+            meta_clean["code"] = sorteo_record.code
         except Exception:
             db.session.rollback()
             raise
