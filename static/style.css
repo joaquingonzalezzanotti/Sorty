@@ -1387,12 +1387,11 @@ th {
     gap: 8px;
   }
   .top-links {
-    display: grid;
-    grid-template-rows: auto auto;
-    grid-template-columns: 1fr;
-    gap: 6px;
-    align-items: end;
-    justify-items: end;
+    display: flex;
+    flex-direction: row;
+    gap: 8px;
+    align-items: center;
+    justify-content: flex-end;
   }
   .hero-row {
     flex-direction: column;
@@ -1434,8 +1433,18 @@ th {
   .theme-toggle {
     width: auto;
     text-align: center;
-    padding: 6px 10px;
-    font-size: 12px;
+    padding: 0;
+  }
+
+  .footer {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .footer-right {
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: wrap;
   }
 }
 .table-container {
