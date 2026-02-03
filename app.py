@@ -621,6 +621,21 @@ def assignment_for_client(assignments: Dict[str, str], participants: List[dict])
 
 
 @app.route("/", methods=["GET"])
+def landing():
+    base = (os.getenv("PUBLIC_APP_URL") or request.url_root or "").strip().rstrip("/")
+    if not base:
+        base = "https://sorty-neon.vercel.app"
+    if base.startswith("http://"):
+        base = "https://" + base[len("http://") :]
+    return render_template(
+        "landing.html",
+        canonical_url=f"{base}/",
+        app_url=f"{base}/app",
+        og_image_url=f"{base}/static/sorty_logo.png",
+    )
+
+
+@app.route("/app", methods=["GET"])
 def index():
     email_mode = os.getenv("EMAIL_MODE", "smtp").lower()
     return render_template("index.html", email_mode=email_mode)

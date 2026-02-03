@@ -1,0 +1,191 @@
+﻿<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sorty | Amigo invisible online simple y moderno</title>
+  <meta name="description" content="Sorty es una app de amigo invisible para crear sorteos en minutos, agregar exclusiones y enviar resultados por email de forma simple.">
+  <meta name="keywords" content="Sorty, amigo invisible, sorteo secreto, secret santa, sorteador online">
+  <link rel="canonical" href="{{ canonical_url }}">
+
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Sorty | Amigo invisible online simple y moderno">
+  <meta property="og:description" content="Crea un sorteo de amigo invisible en minutos. Participantes, exclusiones y envio de resultados en un solo flujo.">
+  <meta property="og:url" content="{{ canonical_url }}">
+  <meta property="og:image" content="{{ og_image_url }}">
+  <meta property="og:site_name" content="Sorty">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Sorty | Amigo invisible online simple y moderno">
+  <meta name="twitter:description" content="Organiza tu amigo invisible con exclusiones, fecha limite y envio automatico.">
+  <meta name="twitter:image" content="{{ og_image_url }}">
+
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='sorty_logo.png') }}">
+  <link rel="shortcut icon" type="image/png" href="{{ url_for('static', filename='sorty_logo.png') }}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "Sorty",
+    "applicationCategory": "UtilityApplication",
+    "operatingSystem": "Web",
+    "url": {{ canonical_url | tojson }},
+    "description": "Aplicacion web para organizar sorteos de amigo invisible con exclusiones y envio de resultados.",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "featureList": [
+      "Gestion de participantes",
+      "Exclusiones personalizadas",
+      "Envio de resultados por email",
+      "Modo claro y oscuro"
+    ]
+  }
+  </script>
+</head>
+<body class="landing">
+  <nav class="topbar">
+    <div class="brand">
+      <img src="{{ url_for('static', filename='sorty_logo.png') }}" alt="Sorty logo" class="brand-logo">
+      <div>
+        <div class="brand-name">Sorty</div>
+        <div class="brand-tag">Amigo invisible moderno</div>
+      </div>
+    </div>
+    <div class="top-links">
+      <a href="#benefits" class="nav-link">Beneficios</a>
+      <a href="#how" class="nav-link">Como funciona</a>
+      <a href="#seo" class="nav-link">SEO</a>
+      <a href="{{ app_url }}" class="button primary small landing-app-link">Ir a la app</a>
+      <button id="theme-toggle" class="theme-toggle" aria-label="Cambiar tema">
+        <span class="theme-toggle-track">
+          <span class="theme-toggle-thumb">
+            <span class="theme-toggle-icon sun" aria-hidden="true">&#9728;</span>
+            <span class="theme-toggle-icon moon" aria-hidden="true">&#9790;</span>
+          </span>
+        </span>
+      </button>
+    </div>
+  </nav>
+
+  <main class="page landing-page">
+    <header class="hero landing-hero" id="top">
+      <div class="landing-grid">
+        <div>
+          <p class="eyebrow">Sorty · amigo invisible</p>
+          <h1>El amigo invisible que tu grupo quiere usar</h1>
+          <p class="lede">Organiza tu sorteo en minutos: agrega participantes, define exclusiones y envia resultados por correo con un flujo claro.</p>
+          <div class="landing-actions">
+            <a href="{{ app_url }}" class="button primary">Crear un sorteo ahora</a>
+            <a href="#how" class="button ghost">Ver como funciona</a>
+          </div>
+          <div class="badges">
+            <span class="badge soft">Exclusiones personalizables</span>
+            <span class="badge soft">Envio por email</span>
+            <span class="badge soft">Modo claro y oscuro</span>
+          </div>
+        </div>
+
+        <aside class="landing-preview" aria-label="Vista previa">
+          <div class="preview-card">
+            <div class="preview-top">
+              <span class="mini-badge">Sorty · MVP</span>
+              <span class="mini-badge">Amigo invisible</span>
+            </div>
+            <h3>Un sorteo sin estres</h3>
+            <p>Define presupuesto, fecha limite y una nota. Sorty se encarga del resto.</p>
+            <div class="preview-check">Listo para compartir</div>
+          </div>
+        </aside>
+      </div>
+    </header>
+
+    <section class="landing-section" id="benefits">
+      <div class="landing-head">
+        <p class="eyebrow">Beneficios</p>
+        <h2>Todo lo que necesitas para un amigo invisible ordenado</h2>
+      </div>
+      <div class="landing-cards">
+        <article class="landing-card">
+          <h3>Organizacion rapida</h3>
+          <p>Agrega participantes y define al administrador sin planillas ni caos.</p>
+        </article>
+        <article class="landing-card">
+          <h3>Mensajes personalizados</h3>
+          <p>Incluye presupuesto, fecha limite y notas para alinear a todo el grupo.</p>
+        </article>
+        <article class="landing-card">
+          <h3>Interfaz moderna</h3>
+          <p>Diseño responsive con animaciones suaves para desktop y mobile.</p>
+        </article>
+        <article class="landing-card">
+          <h3>Privacidad primero</h3>
+          <p>Cada participante recibe solo su asignacion y el admin controla el proceso.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="landing-section" id="how">
+      <div class="landing-head">
+        <p class="eyebrow">Como funciona</p>
+        <h2>Tres pasos para cerrar tu sorteo</h2>
+      </div>
+      <div class="steps-grid">
+        <article class="step-card">
+          <span class="step-number">1</span>
+          <h3>Invita participantes</h3>
+          <p>Carga nombres y correos. Marca quien sera administrador.</p>
+        </article>
+        <article class="step-card">
+          <span class="step-number">2</span>
+          <h3>Define exclusiones</h3>
+          <p>Evita combinaciones incomodas con reglas simples por persona.</p>
+        </article>
+        <article class="step-card">
+          <span class="step-number">3</span>
+          <h3>Envia el sorteo</h3>
+          <p>Sorty genera resultados validos y envia los correos automaticamente.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="landing-section" id="seo">
+      <div class="landing-head">
+        <p class="eyebrow">Sorty + SEO</p>
+        <h2>Amigo invisible optimizado para buscadores</h2>
+      </div>
+      <article class="seo-card">
+        <p>Sorty esta pensado para consultas como <strong>sorty</strong>, <strong>amigo invisible</strong>, <strong>sorteo secreto</strong> y <strong>secret santa</strong>. La landing concentra el mensaje de valor y la app en <code>/app</code> se enfoca en ejecutar el sorteo.</p>
+      </article>
+    </section>
+
+    <section class="landing-cta">
+      <div>
+        <h2>Listo para empezar?</h2>
+        <p>Configura tu sorteo de amigo invisible en segundos.</p>
+      </div>
+      <a href="{{ app_url }}" class="button primary">Ir a Sorty</a>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-left">
+      <div class="brand-name">Sorty</div>
+      <div class="brand-tag">Amigo invisible confiable</div>
+    </div>
+    <div class="footer-right">
+      <span class="footer-author">Creado por <span class="footer-siglas">JGZ</span></span>
+      <a href="https://github.com/joaquingonzalezzanotti" target="_blank" rel="noopener" class="footer-link">GitHub</a>
+    </div>
+  </footer>
+
+  <script src="{{ url_for('static', filename='landing.js') }}"></script>
+</body>
+</html>
