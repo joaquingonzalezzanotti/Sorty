@@ -1622,6 +1622,37 @@ th {
   transition: opacity 0.45s ease, transform 0.45s ease;
 }
 
+.landing-hero {
+  position: relative;
+  overflow: hidden;
+}
+
+.landing-hero::before,
+.landing-hero::after {
+  content: "";
+  position: absolute;
+  width: 220px;
+  height: 220px;
+  border-radius: 999px;
+  filter: blur(0);
+  opacity: 0.4;
+  pointer-events: none;
+  background: radial-gradient(circle, rgba(14, 165, 233, 0.35), transparent 70%);
+  animation: hero-float 12s ease-in-out infinite;
+}
+
+.landing-hero::before {
+  top: -80px;
+  left: -60px;
+}
+
+.landing-hero::after {
+  bottom: -90px;
+  right: -70px;
+  background: radial-gradient(circle, rgba(249, 115, 22, 0.3), transparent 70%);
+  animation-delay: 2s;
+}
+
 .landing-hero.is-visible,
 .landing-section.is-visible,
 .landing-cta.is-visible {
@@ -1656,6 +1687,12 @@ th {
   padding: 18px;
   box-shadow: var(--shadow);
   animation: float 4s ease-in-out infinite;
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.preview-card:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 24px 50px rgba(15, 23, 42, 0.18);
 }
 
 .preview-card h3 {
@@ -1732,6 +1769,15 @@ th {
   border-radius: 16px;
   background: var(--input-bg);
   padding: 16px;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.landing-card:hover,
+.step-card:hover,
+.seo-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(14, 165, 233, 0.35);
+  box-shadow: 0 18px 30px rgba(15, 23, 42, 0.12);
 }
 
 .landing-card h3,
@@ -1809,6 +1855,16 @@ th {
   }
 }
 
+@keyframes hero-float {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(14px, 12px, 0) scale(1.05);
+  }
+}
+
 @keyframes fadeUp {
   from {
     opacity: 0;
@@ -1827,6 +1883,21 @@ th {
 
   .landing-cards {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-hero,
+  .landing-section,
+  .landing-cta,
+  .preview-card {
+    transition: none;
+    animation: none;
+  }
+
+  .landing-hero::before,
+  .landing-hero::after {
+    animation: none;
   }
 }
 
