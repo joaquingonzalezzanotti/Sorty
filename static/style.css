@@ -69,6 +69,13 @@ body {
   overflow-x: hidden;
 }
 
+a,
+a:hover,
+a:focus,
+a:active {
+  text-decoration: none;
+}
+
 html {
   overflow-x: hidden;
   width: 100%;
@@ -630,6 +637,7 @@ textarea:focus {
   border: 1px solid var(--border);
   background: var(--button-bg, var(--input-bg));
   color: var(--text);
+  text-decoration: none;
   border-radius: 12px;
   padding: 10px 16px;
   min-height: 42px;
@@ -1267,7 +1275,7 @@ th {
 }
 
 .footer-link:hover {
-  text-decoration: underline;
+  text-decoration: none;
 }
 
 .footer-siglas {

@@ -13,14 +13,13 @@
 </head>
 <body>
   <nav class="topbar">
-    <div class="brand">
+    <a href="/" class="brand" aria-label="Ir a la landing de Sorty">
       <img src="{{ url_for('static', filename='sorty_logo.png') }}" alt="Sorty logo" class="brand-logo">
       <div>
         <div class="brand-name">Sorty</div>
         <div class="brand-tag">Tu amigo invisible de confianza</div>      </div>
-    </div>
+    </a>
     <div class="top-links">
-      <a href="/" class="nav-link">Landing</a>
       <a href="#participants" class="nav-link">Participantes</a>
       <a href="#exclusions" class="nav-link">Exclusiones</a>
       <a href="#details" class="nav-link">Detalles</a>
@@ -39,7 +38,6 @@
     <header class="hero">
       <div class="hero-grid">
         <div>
-          <p class="eyebrow">MVP operativo</p>
           <h1>Configura tu sorteo</h1>
           <p class="lede">Carga participantes, define reglas y envia resultados en un flujo simple.</p>
           <div class="badges">
