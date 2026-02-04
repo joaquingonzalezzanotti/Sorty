@@ -155,22 +155,62 @@ def find_assignments(
     return None, "No se pudo encontrar un sorteo valido con las restricciones dadas."
 
 
-def build_participant_email(
-    giver: dict, receiver: dict, meta: dict, admin_contact: str, sender_name: str
-) -> Tuple[str, str, str]:
-    budget = meta.get("budget")
-    deadline = meta.get("deadline")
-    note = meta.get("note")
+def resolve_logo_source(prefer_inline: bool = True) -> Tuple[str, Optional[dict]]:
+    logo_small = "sorty_logo_small.png"
+    logo_large = "sorty_logo.png"
+    logo_path = os.path.join(app.static_folder, logo_small)
 
+    if prefer_inline and os.path.isfile(logo_path):
+        try:
+            with open(logo_path, "rb") as handle:
+                data = handle.read()
+        except OSError:
+            data = None
+        if data:
+            return "cid:sorty-logo", {
+                "cid": "sorty-logo",
+                "data": data,
+                "maintype": "image",
+                "subtype": "png",
+            }
+
+    filename = logo_small if os.path.isfile(logo_path) else logo_large
     base = (os.getenv("PUBLIC_APP_URL") or "").strip().rstrip("/")
     if not base:
         try:
             base = (request.url_root or "").rstrip("/")
         except RuntimeError:
             base = "http://localhost:5000"
-    if base.startswith("http://"):
+    if base.startswith("http://") and "localhost" not in base and "127.0.0.1" not in base:
         base = "https://" + base[len("http://") :]
-    logo_url = f"{base}/static/sorty_logo.png"
+    return f"{base}/static/{filename}", None
+
+
+def attach_inline_logo(msg: EmailMessage, inline_logo: Optional[dict]) -> None:
+    if not inline_logo:
+        return
+    html_part = msg.get_body(preferencelist=("html",))
+    if not html_part:
+        return
+    html_part.add_related(
+        inline_logo["data"],
+        maintype=inline_logo["maintype"],
+        subtype=inline_logo["subtype"],
+        cid=inline_logo["cid"],
+    )
+
+
+def build_participant_email(
+    giver: dict,
+    receiver: dict,
+    meta: dict,
+    admin_contact: str,
+    sender_name: str,
+    logo_src: str,
+) -> Tuple[str, str, str]:
+    budget = meta.get("budget")
+    deadline = meta.get("deadline")
+    note = meta.get("note")
 
     subject_line = "Tu sorteo (Sorty)" + (f" - Entrega antes de {deadline}" if deadline else "")
 
@@ -203,7 +243,7 @@ def build_participant_email(
         note=note,
         admin_contact=admin_contact,
         sender_name=sender_name,
-        logo_url=logo_url,
+        logo_src=logo_src,
         max_width=520,
     )
     return subject_line, html_body, text_body
@@ -214,6 +254,7 @@ def build_admin_email(
     participants: List[dict],
     meta: dict,
     sender_name: str,
+    logo_src: str,
     exclusions: List[Tuple[str, str]],
     admin_link: Optional[str] = None,
     code: Optional[str] = None,
@@ -252,6 +293,7 @@ def build_admin_email(
         note=note,
         admin_link=admin_link,
         sender_name=sender_name,
+        logo_src=logo_src,
         code=code,
         max_width=560,
     )
@@ -296,13 +338,14 @@ def dispatch_emails(
     admin = next(p for p in participants if p["is_admin"])
     admin_contact = admin["name"]
     by_email = {p["email"]: p for p in participants}
+    logo_src, logo_inline = resolve_logo_source(prefer_inline=mode != "console")
 
     messages: List[EmailMessage] = []
 
     for giver in participants:
         receiver = by_email[assignments[giver["email"]]]
         subject, html_body, text_body = build_participant_email(
-            giver, receiver, meta, admin_contact, sender_name
+            giver, receiver, meta, admin_contact, sender_name, logo_src
         )
         msg = EmailMessage()
         msg["Subject"] = subject
@@ -310,10 +353,11 @@ def dispatch_emails(
         msg["To"] = formataddr((giver["name"], giver["email"]))
         msg.set_content(text_body)
         msg.add_alternative(html_body, subtype="html")
+        attach_inline_logo(msg, logo_inline)
         messages.append(msg)
 
     admin_subject, admin_html, admin_text = build_admin_email(
-        assignments, participants, meta, sender_name, exclusions, admin_link, code=meta.get("code")
+        assignments, participants, meta, sender_name, logo_src, exclusions, admin_link, code=meta.get("code")
     )
     admin_msg = EmailMessage()
     admin_msg["Subject"] = admin_subject
@@ -321,6 +365,7 @@ def dispatch_emails(
     admin_msg["To"] = formataddr((admin["name"], admin["email"]))
     admin_msg.set_content(admin_text)
     admin_msg.add_alternative(admin_html, subtype="html")
+    attach_inline_logo(admin_msg, logo_inline)
     messages.append(admin_msg)
 
     if mode == "console":
@@ -597,12 +642,14 @@ def preview_participant_email():
         "deadline": "20/12",
         "note": "Traer regalo envuelto.",
     }
+    logo_src, _ = resolve_logo_source(prefer_inline=False)
     _, html_body, _ = build_participant_email(
         giver,
         receiver,
         meta,
         admin_contact="Nora (admin)",
         sender_name="Sorty",
+        logo_src=logo_src,
     )
     return html_body
 
@@ -625,11 +672,13 @@ def preview_admin_email():
         "deadline": "20/12",
         "note": "Intercambio presencial.",
     }
+    logo_src, _ = resolve_logo_source(prefer_inline=False)
     _, html_body, _ = build_admin_email(
         assignments,
         participants,
         meta,
         sender_name="Sorty",
+        logo_src=logo_src,
         exclusions=exclusions,
         admin_link="https://sorty.example/sorteo/ABC123",
         code="ABC123",

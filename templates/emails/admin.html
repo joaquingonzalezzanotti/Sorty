@@ -1,35 +1,38 @@
 {% extends "emails/base.html" %}
 {% block content %}
-  <table style="width:100%; border-collapse:collapse; margin-bottom:10px;">
+  <table style="width:100%; border-collapse:collapse; margin-bottom:12px;">
     <tr>
-      <td style="text-align:left; font-size:12px; letter-spacing:1.2px; text-transform:uppercase; color:#6b7280; font-weight:600;">
-        Sorty
+      <td style="text-align:left;">
+        <img src="{{ logo_src }}" alt="Sorty" width="34" height="34" style="display:block; border-radius:8px;">
       </td>
-      <td style="text-align:right; font-size:12px; letter-spacing:1.2px; text-transform:uppercase; color:#94a3b8; font-weight:600;">
-        Administrador
+      <td style="text-align:right;">
+        <span style="display:inline-block; padding:6px 10px; background:#f1f5f9; color:#0f172a; border-radius:999px; font-size:11px; letter-spacing:1.2px; text-transform:uppercase; font-weight:700;">
+          Administrador
+        </span>
       </td>
     </tr>
   </table>
 
-  <h2 style="margin:8px 0 10px; font-size:22px; color:#111827;">
+  <h2 style="margin:6px 0 10px; font-size:22px; color:#0f172a;">
     Asignaciones completas{% if code %} - {{ code }}{% endif %}
   </h2>
-  <p style="font-size:15px; color:#374151; margin:0 0 14px;">
+  <p style="font-size:15px; color:#475569; margin:0 0 16px;">
     Este correo se envía porque usted es el Administrador del sorteo y contiene todos los resultados. Si desea ver únicamente a quién le ha tocado, por favor revise el otro correo.
   </p>
-  <div style="border:1px solid #e5e7eb; border-radius:12px; overflow:hidden;">
-    <table style="width:100%; border-collapse:collapse; font-size:15px;">
+
+  <div style="border:1px solid #e2e8f0; border-radius:12px; overflow:hidden;">
+    <table style="width:100%; border-collapse:collapse; font-size:14px;">
       <thead>
         <tr style="background:#f8fafc;">
-          <th style="text-align:left; padding:10px 12px; color:#6b7280;">Entrega</th>
-          <th style="text-align:left; padding:10px 12px; color:#6b7280;">Para</th>
+          <th style="text-align:left; padding:10px 12px; color:#64748b; text-transform:uppercase; letter-spacing:1px; font-size:11px;">Entrega</th>
+          <th style="text-align:left; padding:10px 12px; color:#64748b; text-transform:uppercase; letter-spacing:1px; font-size:11px;">Para</th>
         </tr>
       </thead>
       <tbody>
         {% for row in rows %}
           <tr>
             <td style="padding:10px 12px; border-bottom:1px solid #e5e7eb;">{{ row.giver_name }}</td>
-            <td style="padding:10px 12px; border-bottom:1px solid #e5e7eb; color:#0ea5e9;">{{ row.receiver_name }}</td>
+            <td style="padding:10px 12px; border-bottom:1px solid #e5e7eb; color:#0ea5e9; font-weight:600;">{{ row.receiver_name }}</td>
           </tr>
         {% endfor %}
       </tbody>
@@ -38,7 +41,7 @@
 
   {% if exclusions %}
     <div style="margin-top:16px; padding:12px 14px; background:#0f172a; border:1px solid #1f2937; border-radius:12px;">
-      <div style="font-weight:600; color:#e5e7eb; margin-bottom:6px;">Exclusiones cargadas</div>
+      <div style="font-weight:700; color:#e5e7eb; margin-bottom:6px;">Exclusiones cargadas</div>
       {% for ex in exclusions %}
         <div style="color:#cbd5e1; font-size:14px; margin:4px 0;">{{ ex.giver_name }} no regala a {{ ex.receiver_name }}</div>
       {% endfor %}
@@ -46,7 +49,7 @@
   {% endif %}
 
   {% if budget or deadline or note %}
-    <div style="margin-top:16px; padding:12px 14px; background:#f8fafc; border-radius:12px; border:1px solid #e5e7eb;">
+    <div style="margin-top:16px; padding:12px 14px; background:#f8fafc; border-radius:12px; border:1px solid #e2e8f0;">
       {% if budget %}
         <div style="margin:4px 0;"><strong>Presupuesto:</strong> {{ budget }}</div>
       {% endif %}
@@ -65,5 +68,5 @@
     </p>
   {% endif %}
 
-  <p style="margin-top:16px; font-size:13px; color:#6b7280;">Enviado por {{ sender_name }}.</p>
+  <p style="margin-top:16px; font-size:13px; color:#94a3b8;">Enviado por {{ sender_name }}.</p>
 {% endblock %}

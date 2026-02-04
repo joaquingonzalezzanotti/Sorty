@@ -1,34 +1,52 @@
 {% extends "emails/base.html" %}
 {% block content %}
-  <table style="width:100%; border-collapse:collapse; margin-bottom:10px;">
+  <table style="width:100%; border-collapse:collapse; margin-bottom:12px;">
     <tr>
-      <td style="text-align:left; font-size:12px; letter-spacing:1.2px; text-transform:uppercase; color:#6b7280; font-weight:600;">
-        Sorty
+      <td style="text-align:left;">
+        {% if logo_src %}
+          <img src="{{ logo_src }}" alt="Sorty" width="28" height="28" style="display:inline-block; vertical-align:middle; border-radius:8px;">
+          <span style="display:inline-block; margin-left:8px; padding:6px 12px; background:#0f172a; color:#ffffff; border-radius:999px; font-size:11px; letter-spacing:1.6px; text-transform:uppercase; font-weight:700; vertical-align:middle;">
+            Sorty
+          </span>
+        {% else %}
+          <span style="display:inline-block; padding:6px 12px; background:#0f172a; color:#ffffff; border-radius:999px; font-size:11px; letter-spacing:1.6px; text-transform:uppercase; font-weight:700;">
+            Sorty
+          </span>
+        {% endif %}
       </td>
-      <td style="text-align:right;">
-        <img src="{{ logo_url }}" alt="Sorty" width="40" style="display:block;">
+      <td style="text-align:right; font-size:11px; letter-spacing:1.2px; text-transform:uppercase; color:#94a3b8; font-weight:700;">
+        Amigo invisible
       </td>
     </tr>
   </table>
 
-  <h2 style="margin:8px 0 6px; font-size:24px; color:#111827;">Hola {{ giver.name }},</h2>
-  <p style="margin:0 0 16px; font-size:16px; color:#374151;">
-    Te toco regalar a <strong style="color:#0f172a;">{{ receiver.name }}</strong>.
+  <h2 style="margin:6px 0 8px; font-size:24px; color:#0f172a;">Hola {{ giver.name }},</h2>
+  <p style="margin:0 0 18px; font-size:16px; color:#475569;">
+    Este es tu amigo invisible.
   </p>
 
+  <div style="margin:0 0 18px; padding:16px 16px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:14px;">
+    <div style="font-size:11px; letter-spacing:1.4px; text-transform:uppercase; color:#0369a1; font-weight:700;">
+      Te toco regalar a
+    </div>
+    <div style="margin-top:6px; font-size:22px; font-weight:700; color:#0f172a;">
+      {{ receiver.name }}
+    </div>
+  </div>
+
   {% if budget or deadline %}
-    <div style="margin:10px 0 18px; padding:12px 14px; background:#f8fafc; border:1px solid #e5e7eb; border-radius:12px;">
-      <table style="width:100%; border-collapse:collapse; font-size:15px;">
+    <div style="margin:0 0 18px; padding:12px 14px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px;">
+      <table style="width:100%; border-collapse:collapse; font-size:14px;">
         {% if budget %}
           <tr>
-            <td style="padding:4px 0; color:#6b7280;">Presupuesto sugerido</td>
-            <td style="padding:4px 0; text-align:right; font-weight:600; color:#111827;">{{ budget }}</td>
+            <td style="padding:4px 0; color:#64748b; text-transform:uppercase; letter-spacing:1px; font-size:11px;">Presupuesto sugerido</td>
+            <td style="padding:4px 0; text-align:right; font-weight:700; color:#0f172a;">{{ budget }}</td>
           </tr>
         {% endif %}
         {% if deadline %}
           <tr>
-            <td style="padding:4px 0; color:#6b7280;">Fecha limite</td>
-            <td style="padding:4px 0; text-align:right; font-weight:600; color:#111827;">{{ deadline }}</td>
+            <td style="padding:4px 0; color:#64748b; text-transform:uppercase; letter-spacing:1px; font-size:11px;">Fecha limite</td>
+            <td style="padding:4px 0; text-align:right; font-weight:700; color:#0f172a;">{{ deadline }}</td>
           </tr>
         {% endif %}
       </table>
@@ -36,21 +54,21 @@
   {% endif %}
 
   {% if note %}
-    <div style="margin:12px 0 18px; padding:14px 16px; border-left:4px solid #0ea5e9; background:#f0f9ff; border-radius:10px; font-size:15px; line-height:1.5;">
-      <div style="font-weight:600; color:#0f172a;">Mensaje del grupo</div>
+    <div style="margin:0 0 18px; padding:14px 16px; border-left:4px solid #0ea5e9; background:#eef6ff; border-radius:12px; font-size:15px; line-height:1.5;">
+      <div style="font-weight:700; color:#0f172a;">Mensaje del grupo</div>
       <div style="margin-top:6px; color:#0f172a;">{{ note|safe }}</div>
     </div>
   {% endif %}
 
-  <p style="margin:0 0 16px; font-size:15px; color:#374151;">
+  <p style="margin:0 0 18px; font-size:15px; color:#475569;">
     Si necesitas algo, contacta a <strong>{{ admin_contact }}</strong>.
   </p>
 
-  <div style="text-align:center; margin:8px 0 14px;">
-    <span style="display:block; padding:12px 16px; background:linear-gradient(135deg,#0ea5e9,#06b6d4); color:#ffffff; border-radius:12px; font-size:15px; font-weight:600;">
+  <div style="text-align:center; margin:10px 0 16px;">
+    <span style="display:block; padding:12px 16px; background:linear-gradient(135deg,#0ea5e9,#22c55e); color:#ffffff; border-radius:12px; font-size:15px; font-weight:700;">
       Disfruta la sorpresa!
     </span>
   </div>
 
-  <p style="margin:0; font-size:13px; color:#6b7280;">Enviado por {{ sender_name }}.</p>
+  <p style="margin:0; font-size:13px; color:#94a3b8;">Enviado por {{ sender_name }}.</p>
 {% endblock %}
