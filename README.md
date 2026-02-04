@@ -39,28 +39,6 @@ Sorty es una app web para organizar sorteos de amigo invisible con un flujo simp
 - Frontend server-rendered (Jinja + CSS + JS vanilla)
 - Deploy en Vercel (`api/index.py` expone la app WSGI)
 
-## Variables de entorno
-
-Base de datos:
-
-- `DATABASE_URL` (prioridad alta)
-- `POSTGRES_PRISMA_URL`
-- `POSTGRES_URL`
-- `POSTGRES_URL_NON_POOLING`
-
-Email:
-
-- `EMAIL_MODE`: `smtp` (default) o `console`
-- `SMTP_HOST` (default: `smtp.gmail.com`)
-- `SMTP_PORT` (default: `587`)
-- `SMTP_USER`
-- `SMTP_PASS`
-- `SMTP_FROM_EMAIL` (opcional, usa `SMTP_USER` si no existe)
-- `SMTP_FROM_NAME` (opcional, default: `Sorty`)
-
-URL publica:
-
-- `PUBLIC_APP_URL` (se usa para links absolutos y assets en emails)
 
 ## API principal
 
@@ -69,6 +47,3 @@ URL publica:
 - `POST /api/sorteo/<code>/resend` (alias: `POST /api/draw/<code>/resend`): reenvia correos.
 - `PATCH /api/sorteo/<code>/participant/<id>/email` (alias `.../draw/...`): corrige email de participante.
 
-## Tests UI
-
-Hay pruebas de Playwright en `tests/ui.spec.js` y scripts npm en `package.json`.
