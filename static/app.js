@@ -28,6 +28,8 @@ const sendCheck = document.getElementById("send-check");
 const sendOverlayText = document.getElementById("send-overlay-text");
 const sendOverlaySub = document.getElementById("send-overlay-sub");
 const sendOverlayOk = document.getElementById("send-overlay-ok");
+const sendOverlayLink = document.getElementById("send-overlay-link");
+const sendOverlayErrors = document.getElementById("send-overlay-errors");
 const submitBtn = participantForm.querySelector("button[type='submit']");
 const budgetInput = document.getElementById("budget");
 const deadlineInput = document.getElementById("deadline");
@@ -98,6 +100,14 @@ function setSending(active, { message = "", sub = "", status = "sending" } = {})
   if (!active) {
     if (sendSpinner) sendSpinner.classList.remove("hidden");
     if (sendCheck) sendCheck.classList.add("hidden");
+    if (sendOverlayLink) {
+      sendOverlayLink.classList.add("hidden");
+      sendOverlayLink.removeAttribute("href");
+    }
+    if (sendOverlayErrors) {
+      sendOverlayErrors.classList.add("hidden");
+      sendOverlayErrors.innerHTML = "";
+    }
   }
 }
 
@@ -584,6 +594,14 @@ async function submitDraw(send) {
     send,
   };
 
+  if (sendOverlayLink) {
+    sendOverlayLink.classList.add("hidden");
+    sendOverlayLink.removeAttribute("href");
+  }
+  if (sendOverlayErrors) {
+    sendOverlayErrors.classList.add("hidden");
+    sendOverlayErrors.innerHTML = "";
+  }
   setSending(true, { message: send ? "Enviando correos..." : "Preparando simulacion..." });
   let showSuccessOverlay = false;
   let count = null;
@@ -603,12 +621,49 @@ async function submitDraw(send) {
     if (!res.ok || !data?.ok) throw new Error(data?.error || "Error en el sorteo.");
     count = data.email_status?.emails;
     if (data.email_status?.mode === "smtp" || send) {
+      const status = data.email_status || {};
+      const participantSent = status.participant_sent ?? null;
+      const participantError = status.participant_error ?? null;
+      const errors = Array.isArray(status.errors) ? status.errors : [];
+      const subParts = [];
+      if (participantSent !== null) {
+        subParts.push(`Enviados ${participantSent} correos.`);
+      } else if (count) {
+        subParts.push(`Enviados ${count} correos.`);
+      }
+      if (participantError) {
+        subParts.push(`${participantError} con error.`);
+      }
       showSuccessOverlay = true;
       setSending(true, {
         message: "Correos enviados",
-        sub: count ? `Enviados ${count} correos.` : "",
+        sub: subParts.join(" "),
         status: "success",
       });
+      if (sendOverlayLink && data.draw_link) {
+        sendOverlayLink.href = data.draw_link;
+        sendOverlayLink.classList.remove("hidden");
+      }
+      if (sendOverlayErrors) {
+        sendOverlayErrors.innerHTML = "";
+        if (errors.length) {
+          const title = document.createElement("div");
+          title.className = "error-title";
+          title.textContent = "Correos con error";
+          const list = document.createElement("ul");
+          errors.forEach((item) => {
+            const li = document.createElement("li");
+            const label = item.email ? `${item.email}: ` : "";
+            li.textContent = `${label}${item.error || "Error al enviar."}`;
+            list.appendChild(li);
+          });
+          sendOverlayErrors.appendChild(title);
+          sendOverlayErrors.appendChild(list);
+          sendOverlayErrors.classList.remove("hidden");
+        } else {
+          sendOverlayErrors.classList.add("hidden");
+        }
+      }
       showToast("Correos enviados.", "success");
       resetAppState();
     } else {

@@ -1348,6 +1348,33 @@ th {
   text-align: center;
 }
 
+.send-overlay-errors {
+  width: 100%;
+  background: var(--card-bg);
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: left;
+}
+
+.send-overlay-errors .error-title {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.send-overlay-errors ul {
+  margin: 6px 0 0;
+  padding-left: 16px;
+}
+
+.send-overlay-actions {
+  width: 100%;
+  display: grid;
+  gap: 8px;
+}
+
 #send-overlay-ok {
   width: 100%;
 }
@@ -1566,6 +1593,35 @@ th {
   border-radius: 999px;
   font-size: 12px;
   margin-left: 8px;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+
+.status-sent {
+  background: #ecfdf5;
+  color: #047857;
+  border-color: #a7f3d0;
+}
+
+.status-error {
+  background: #fef2f2;
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+
+.status-muted {
+  background: #f8fafc;
+  color: #64748b;
+  border-color: #e2e8f0;
 }
 
 .participant-list {

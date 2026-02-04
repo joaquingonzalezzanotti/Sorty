@@ -5,14 +5,16 @@ import ssl
 import threading
 import uuid
 import webbrowser
+from datetime import datetime
 from email.message import EmailMessage
 from email.utils import formataddr
 from typing import Dict, List, Optional, Set, Tuple
 
 from flask import Flask, jsonify, render_template, request, send_from_directory
+from sqlalchemy import inspect
 from sqlalchemy.orm import joinedload
 
-from models import Asignacion, Participante, Sorteo, db
+from models import Asignacion, EmailEnvio, Participante, Sorteo, db
 
 
 def resolve_database_uri() -> str:
@@ -155,22 +157,82 @@ def find_assignments(
     return None, "No se pudo encontrar un sorteo valido con las restricciones dadas."
 
 
-def build_participant_email(
-    giver: dict, receiver: dict, meta: dict, admin_contact: str, sender_name: str
-) -> Tuple[str, str, str]:
-    budget = meta.get("budget")
-    deadline = meta.get("deadline")
-    note = meta.get("note")
+def ensure_email_tracking_table() -> bool:
+    try:
+        inspector = inspect(db.engine)
+        if "email_envio" not in inspector.get_table_names():
+            EmailEnvio.__table__.create(db.engine)
+        return True
+    except Exception:
+        return False
 
+
+def format_smtp_error(code: object, response: object) -> str:
+    if isinstance(response, bytes):
+        message = response.decode(errors="replace")
+    else:
+        message = str(response or "")
+    if code:
+        return f"{code} {message}".strip()
+    return message.strip() or "Destinatario rechazado."
+
+
+def resolve_logo_source(prefer_inline: bool = True) -> Tuple[str, Optional[dict]]:
+    logo_small = "sorty_logo_small.png"
+    logo_large = "sorty_logo.png"
+    logo_path = os.path.join(app.static_folder, logo_small)
+
+    if prefer_inline and os.path.isfile(logo_path):
+        try:
+            with open(logo_path, "rb") as handle:
+                data = handle.read()
+        except OSError:
+            data = None
+        if data:
+            return "cid:sorty-logo", {
+                "cid": "sorty-logo",
+                "data": data,
+                "maintype": "image",
+                "subtype": "png",
+            }
+
+    filename = logo_small if os.path.isfile(logo_path) else logo_large
     base = (os.getenv("PUBLIC_APP_URL") or "").strip().rstrip("/")
     if not base:
         try:
             base = (request.url_root or "").rstrip("/")
         except RuntimeError:
             base = "http://localhost:5000"
-    if base.startswith("http://"):
+    if base.startswith("http://") and "localhost" not in base and "127.0.0.1" not in base:
         base = "https://" + base[len("http://") :]
-    logo_url = f"{base}/static/sorty_logo.png"
+    return f"{base}/static/{filename}", None
+
+
+def attach_inline_logo(msg: EmailMessage, inline_logo: Optional[dict]) -> None:
+    if not inline_logo:
+        return
+    html_part = msg.get_body(preferencelist=("html",))
+    if not html_part:
+        return
+    html_part.add_related(
+        inline_logo["data"],
+        maintype=inline_logo["maintype"],
+        subtype=inline_logo["subtype"],
+        cid=inline_logo["cid"],
+    )
+
+
+def build_participant_email(
+    giver: dict,
+    receiver: dict,
+    meta: dict,
+    admin_contact: str,
+    sender_name: str,
+    logo_src: str,
+) -> Tuple[str, str, str]:
+    budget = meta.get("budget")
+    deadline = meta.get("deadline")
+    note = meta.get("note")
 
     subject_line = "Tu sorteo (Sorty)" + (f" - Entrega antes de {deadline}" if deadline else "")
 
@@ -194,44 +256,18 @@ def build_participant_email(
 
     text_body = "\n".join(text_lines)
 
-    # Inline styles para compatibilidad en emails.
-    html_parts = [
-        "<!doctype html>",
-        "<html>",
-        "<body style=\"font-family:'Segoe UI', Arial, sans-serif; background:#f6f8fb; padding:24px; color:#1d2433;\">",
-        "<div style=\"max-width:520px; margin:0 auto; background:#ffffff; border-radius:14px; padding:24px; box-shadow:0 12px 40px rgba(0,0,0,0.08);\">",
-        f"<div style='text-align:center; margin-bottom:10px;'><img src=\"{logo_url}\" alt=\"Sorty\" width=\"72\" style=\"display:inline-block;\"></div>",
-        f"<div style=\"font-size:14px; letter-spacing:0.4px; text-transform:uppercase; color:#5f6b7a;\">Sorty</div>",
-        f"<h2 style=\"margin:12px 0 10px; font-size:24px; color:#111827;\">Hola {giver['name']},</h2>",
-        f"<p style=\"font-size:16px; line-height:1.6; margin:12px 0;\">Te toco regalar a <strong>{receiver['name']}</strong>.</p>",
-    ]
-
-    if budget:
-        html_parts.append(f"<p style=\"margin:8px 0; font-size:15px;\">Presupuesto sugerido: <strong>{budget}</strong></p>")
-    if deadline:
-        html_parts.append(f"<p style=\"margin:8px 0; font-size:15px;\">Fecha limite: <strong>{deadline}</strong></p>")
-    if note:
-        html_parts.append(
-            f"<div style=\"margin:12px 0; padding:12px 14px; border-left:4px solid #0ea5e9; background:#f0f9ff; border-radius:8px; font-size:15px; line-height:1.5;\">"
-            f"<div style=\"font-weight:600; color:#0f172a;\">Mensaje del grupo:</div>"
-            f"<div style=\"margin-top:6px; color:#0f172a;\">{note}</div>"
-            f"</div>"
-        )
-
-    html_parts.append(
-        f"<p style=\"margin:14px 0 8px; font-size:15px;\">Si necesitas algo, contacta a <strong>{admin_contact}</strong>.</p>"
+    html_body = render_template(
+        "emails/participant.html",
+        giver=giver,
+        receiver=receiver,
+        budget=budget,
+        deadline=deadline,
+        note=note,
+        admin_contact=admin_contact,
+        sender_name=sender_name,
+        logo_src=logo_src,
+        max_width=520,
     )
-    html_parts.append(
-        "<div style=\"margin-top:18px; padding:12px 14px; background:linear-gradient(135deg,#0ea5e9,#06b6d4); color:white; border-radius:10px; font-size:15px;\">"
-        "Disfruta la sorpresa!"
-        "</div>"
-    )
-    html_parts.append(
-        f"<p style=\"margin-top:14px; font-size:13px; color:#6b7280;\">Enviado por {sender_name}.</p>"
-    )
-    html_parts.append("</div></body></html>")
-
-    html_body = "".join(html_parts)
     return subject_line, html_body, text_body
 
 
@@ -240,6 +276,7 @@ def build_admin_email(
     participants: List[dict],
     meta: dict,
     sender_name: str,
+    logo_src: str,
     exclusions: List[Tuple[str, str]],
     admin_link: Optional[str] = None,
     code: Optional[str] = None,
@@ -249,64 +286,39 @@ def build_admin_email(
     note = meta.get("note")
 
     by_email = {p["email"]: p for p in participants}
-    rows_html = []
     rows_text = []
     for giver_email, receiver_email in assignments.items():
         giver = by_email[giver_email]
         receiver = by_email[receiver_email]
-        rows_html.append(
-            f"<tr><td style='padding:8px 10px; border-bottom:1px solid #e5e7eb;'>{giver['name']}</td>"
-            f"<td style='padding:8px 10px; border-bottom:1px solid #e5e7eb; color:#0ea5e9;'>{receiver['name']}</td></tr>"
-        )
         rows_text.append(f"{giver['name']} -> {receiver['name']} ({receiver['email']})")
 
     subject = f"Resultados del Sorteo - {code}" if code else "Resultados del Sorteo - Administrador"
-    html_parts = [
-        "<!doctype html><html><body style=\"font-family:'Segoe UI', Arial, sans-serif; background:#f6f8fb; padding:24px; color:#1d2433;\">",
-        "<div style=\"max-width:560px; margin:0 auto; background:#ffffff; border-radius:14px; padding:24px; box-shadow:0 12px 40px rgba(0,0,0,0.08);\">",
-        "<div style=\"font-size:14px; letter-spacing:0.4px; text-transform:uppercase; color:#5f6b7a;\">Administrador</div>",
-        f"<h2 style=\"margin:12px 0 10px; font-size:22px; color:#111827;\">Asignaciones completas{(' - ' + code) if code else ''}</h2>",
-        "<p style='font-size:15px;'>Este correo se envía porque usted es el Administrador del sorteo y contiene todos los resultados. Si desea ver únicamente a quién le ha tocado, por favor revise el otro correo.</p>",
-        "<table style='width:100%; border-collapse:collapse; margin-top:10px; font-size:15px;'>",
-        "<thead><tr><th style='text-align:left; padding:8px 10px; color:#6b7280;'>Entrega</th><th style='text-align:left; padding:8px 10px; color:#6b7280;'>Para</th></tr></thead>",
-        "<tbody>",
-        "".join(rows_html),
-        "</tbody></table>",
+    rows = [
+        {"giver_name": by_email[giver_email]["name"], "receiver_name": by_email[receiver_email]["name"]}
+        for giver_email, receiver_email in assignments.items()
     ]
+    exclusions_view = []
+    for giver_email, receiver_email in exclusions:
+        giver = by_email.get(giver_email)
+        receiver = by_email.get(receiver_email)
+        if giver and receiver:
+            exclusions_view.append(
+                {"giver_name": giver["name"], "receiver_name": receiver["name"]}
+            )
 
-    if exclusions:
-        html_parts.append(
-            "<div style='margin-top:16px; padding:12px 14px; background:#0f172a; border:1px solid #1f2937; border-radius:10px;'>"
-            "<div style='font-weight:600; color:#e5e7eb; margin-bottom:6px;'>Exclusiones cargadas</div>"
-        )
-        for giver_email, receiver_email in exclusions:
-            giver = by_email.get(giver_email)
-            receiver = by_email.get(receiver_email)
-            if giver and receiver:
-                html_parts.append(
-                    f"<div style='color:#cbd5e1; font-size:14px; margin:4px 0;'>{giver['name']} no regala a {receiver['name']}</div>"
-                )
-        html_parts.append("</div>")
-
-    if budget or deadline or note:
-        html_parts.append("<div style='margin-top:16px; padding:12px 14px; background:#f9fafb; border-radius:10px; border:1px solid #e5e7eb;'>")
-        if budget:
-            html_parts.append(f"<div style='margin:4px 0;'><strong>Presupuesto:</strong> {budget}</div>")
-        if deadline:
-            html_parts.append(f"<div style='margin:4px 0;'><strong>Fecha limite:</strong> {deadline}</div>")
-        if note:
-            html_parts.append(f"<div style='margin:4px 0;'><strong>Mensaje:</strong> {note}</div>")
-        html_parts.append("</div>")
-
-    if admin_link:
-        html_parts.append(
-            f"<p style='margin-top:16px;'><a href='{admin_link}' style='color:#0ea5e9; font-weight:600;'>Ver sorteo completo o reenviar correos</a></p>"
-        )
-
-    html_parts.append(
-        f"<p style='margin-top:16px; font-size:13px; color:#6b7280;'>Enviado por {sender_name}.</p>"
+    html_body = render_template(
+        "emails/admin.html",
+        rows=rows,
+        exclusions=exclusions_view,
+        budget=budget,
+        deadline=deadline,
+        note=note,
+        admin_link=admin_link,
+        sender_name=sender_name,
+        logo_src=logo_src,
+        code=code,
+        max_width=560,
     )
-    html_parts.append("</div></body></html>")
 
     text_lines = ["Asignaciones completas Sorty:", ""]
     text_lines.extend(rows_text)
@@ -329,7 +341,6 @@ def build_admin_email(
         text_lines.append("")
         text_lines.append(f"Ver sorteo: {admin_link}")
 
-    html_body = "".join(html_parts)
     text_body = "\n".join(text_lines)
     return subject, html_body, text_body
 
@@ -341,6 +352,9 @@ def dispatch_emails(
     exclusions: List[Tuple[str, str]],
     mode_override: Optional[str] = None,
     admin_link: Optional[str] = None,
+    sorteo_id: Optional[int] = None,
+    only_emails: Optional[Set[str]] = None,
+    include_admin: bool = True,
 ) -> Dict[str, object]:
     mode = (mode_override or os.getenv("EMAIL_MODE", "smtp")).lower()
     sender_email = os.getenv("SMTP_FROM_EMAIL") or os.getenv("SMTP_USER") or "sorty@example.com"
@@ -349,13 +363,19 @@ def dispatch_emails(
     admin = next(p for p in participants if p["is_admin"])
     admin_contact = admin["name"]
     by_email = {p["email"]: p for p in participants}
+    participant_id_by_email = {p["email"]: p.get("id") for p in participants if p.get("id")}
+    logo_src, logo_inline = resolve_logo_source(prefer_inline=mode != "console")
+    tracking_enabled = bool(sorteo_id) and ensure_email_tracking_table()
+    only_emails_norm = {normalize_email(email) for email in only_emails} if only_emails else None
 
-    messages: List[EmailMessage] = []
+    messages: List[dict] = []
 
     for giver in participants:
+        if only_emails_norm and normalize_email(giver["email"]) not in only_emails_norm:
+            continue
         receiver = by_email[assignments[giver["email"]]]
         subject, html_body, text_body = build_participant_email(
-            giver, receiver, meta, admin_contact, sender_name
+            giver, receiver, meta, admin_contact, sender_name, logo_src
         )
         msg = EmailMessage()
         msg["Subject"] = subject
@@ -363,26 +383,69 @@ def dispatch_emails(
         msg["To"] = formataddr((giver["name"], giver["email"]))
         msg.set_content(text_body)
         msg.add_alternative(html_body, subtype="html")
-        messages.append(msg)
+        attach_inline_logo(msg, logo_inline)
+        messages.append(
+            {
+                "msg": msg,
+                "email": giver["email"],
+                "participant_id": participant_id_by_email.get(giver["email"]),
+                "kind": "participant",
+            }
+        )
 
-    admin_subject, admin_html, admin_text = build_admin_email(
-        assignments, participants, meta, sender_name, exclusions, admin_link, code=meta.get("code")
-    )
-    admin_msg = EmailMessage()
-    admin_msg["Subject"] = admin_subject
-    admin_msg["From"] = formataddr((sender_name, sender_email))
-    admin_msg["To"] = formataddr((admin["name"], admin["email"]))
-    admin_msg.set_content(admin_text)
-    admin_msg.add_alternative(admin_html, subtype="html")
-    messages.append(admin_msg)
+    if include_admin:
+        admin_subject, admin_html, admin_text = build_admin_email(
+            assignments,
+            participants,
+            meta,
+            sender_name,
+            logo_src,
+            exclusions,
+            admin_link,
+            code=meta.get("code"),
+        )
+        admin_msg = EmailMessage()
+        admin_msg["Subject"] = admin_subject
+        admin_msg["From"] = formataddr((sender_name, sender_email))
+        admin_msg["To"] = formataddr((admin["name"], admin["email"]))
+        admin_msg.set_content(admin_text)
+        admin_msg.add_alternative(admin_html, subtype="html")
+        attach_inline_logo(admin_msg, logo_inline)
+        messages.append({"msg": admin_msg, "email": admin["email"], "participant_id": None, "kind": "admin"})
+
+    participant_results: List[dict] = []
+    participant_total = len([m for m in messages if m["kind"] == "participant"])
+    participant_sent = 0
+    participant_error = 0
+    status_updates: List[dict] = []
 
     if mode == "console":
-        for msg in messages:
+        for entry in messages:
+            msg = entry["msg"]
             print("\n" + "-" * 60)
             print(f"To: {msg['To']}")
             print(f"Subject: {msg['Subject']}")
             print(msg.get_content())
-        return {"mode": mode, "sent": False, "emails": len(messages)}
+            if entry["kind"] == "participant":
+                participant_results.append(
+                    {
+                        "email": entry["email"],
+                        "participant_id": entry["participant_id"],
+                        "status": "sent",
+                        "error": None,
+                    }
+                )
+                participant_sent += 1
+        return {
+            "mode": mode,
+            "sent": False,
+            "emails": len(messages),
+            "participant_total": participant_total,
+            "participant_sent": participant_sent,
+            "participant_error": participant_error,
+            "results": participant_results,
+            "errors": [],
+        }
 
     if mode != "smtp":
         raise AppError(f"EMAIL_MODE desconocido: {mode}")
@@ -399,10 +462,88 @@ def dispatch_emails(
     with smtplib.SMTP(host, port, timeout=30) as server:
         server.starttls(context=context)
         server.login(user, password)
-        for msg in messages:
-            server.send_message(msg)
+        for entry in messages:
+            msg = entry["msg"]
+            status = "sent"
+            error = None
+            try:
+                refused = server.send_message(msg)
+                if refused:
+                    info = refused.get(entry["email"])
+                    if info:
+                        status = "error"
+                        error = format_smtp_error(info[0], info[1])
+                    else:
+                        status = "error"
+                        error = "Destinatario rechazado."
+            except smtplib.SMTPRecipientsRefused as exc:
+                info = exc.recipients.get(entry["email"])
+                status = "error"
+                if info:
+                    error = format_smtp_error(info[0], info[1])
+                else:
+                    error = "Destinatario rechazado."
+            except smtplib.SMTPException as exc:
+                status = "error"
+                error = str(exc)
 
-        return {"mode": mode, "sent": True, "emails": len(messages)}
+            if entry["kind"] == "participant":
+                participant_results.append(
+                    {
+                        "email": entry["email"],
+                        "participant_id": entry["participant_id"],
+                        "status": status,
+                        "error": error,
+                    }
+                )
+                if status == "sent":
+                    participant_sent += 1
+                else:
+                    participant_error += 1
+                if tracking_enabled and entry["participant_id"]:
+                    status_updates.append(
+                        {
+                            "participant_id": entry["participant_id"],
+                            "status": status,
+                            "error": error,
+                        }
+                    )
+
+    if tracking_enabled and status_updates:
+        try:
+            for update in status_updates:
+                record = EmailEnvio.query.filter_by(
+                    sorteo_id=sorteo_id, participant_id=update["participant_id"]
+                ).first()
+                if record:
+                    record.status = update["status"]
+                    record.error = update["error"]
+                    record.updated_at = datetime.utcnow()
+                else:
+                    db.session.add(
+                        EmailEnvio(
+                            sorteo_id=sorteo_id,
+                            participant_id=update["participant_id"],
+                            status=update["status"],
+                            error=update["error"],
+                            updated_at=datetime.utcnow(),
+                        )
+                    )
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+
+    error_list = [r for r in participant_results if r["status"] == "error"]
+    return {
+        "mode": mode,
+        "sent": True,
+        "emails": len(messages),
+        "participant_total": participant_total,
+        "participant_sent": participant_sent,
+        "participant_error": participant_error,
+        "results": participant_results,
+        "errors": error_list,
+    }
 
 
 def send_simple_email(
@@ -485,6 +626,7 @@ def load_draw_data(code: str) -> Tuple[Sorteo, dict]:
         participants.append(
             {"id": p.id, "name": p.nombre, "email": p.email, "is_admin": p.email.lower() == sorteo.email_admin.lower()}
         )
+    participant_by_email = {p["email"]: p for p in participants}
 
     exclusions: List[Tuple[str, str]] = []
     for p in sorteo.participantes:
@@ -494,6 +636,15 @@ def load_draw_data(code: str) -> Tuple[Sorteo, dict]:
     assignments: Dict[str, str] = {}
     for a in sorteo.asignaciones:
         assignments[a.giver.email] = a.receiver.email
+
+    status_map: Dict[int, dict] = {}
+    try:
+        inspector = inspect(db.engine)
+        if "email_envio" in inspector.get_table_names():
+            for record in EmailEnvio.query.filter_by(sorteo_id=sorteo.id).all():
+                status_map[record.participant_id] = {"status": record.status, "error": record.error}
+    except Exception:
+        status_map = {}
 
     payload = {
         "id": str(sorteo.public_id),
@@ -506,8 +657,12 @@ def load_draw_data(code: str) -> Tuple[Sorteo, dict]:
             {
                 "giver_email": giver,
                 "receiver_email": receiver,
-                "giver_name": next((p["name"] for p in participants if p["email"] == giver), giver),
-                "receiver_name": next((p["name"] for p in participants if p["email"] == receiver), receiver),
+                "giver_name": participant_by_email.get(giver, {}).get("name", giver),
+                "receiver_name": participant_by_email.get(receiver, {}).get("name", receiver),
+                "giver_id": participant_by_email.get(giver, {}).get("id"),
+                "receiver_id": participant_by_email.get(receiver, {}).get("id"),
+                "email_status": status_map.get(participant_by_email.get(giver, {}).get("id", -1), {}).get("status"),
+                "email_error": status_map.get(participant_by_email.get(giver, {}).get("id", -1), {}).get("error"),
             }
             for giver, receiver in assignments.items()
         ],
@@ -536,6 +691,14 @@ def update_participant_email(sorteo: Sorteo, participant_id: int, new_email: str
         admin_email_updated = True
 
     db.session.commit()
+
+    try:
+        inspector = inspect(db.engine)
+        if "email_envio" in inspector.get_table_names():
+            EmailEnvio.query.filter_by(sorteo_id=sorteo.id, participant_id=participant.id).delete()
+            db.session.commit()
+    except Exception:
+        db.session.rollback()
 
     notified = False
     if notify_previous and old_email.lower() != new_email_norm.lower():
@@ -587,6 +750,12 @@ def save_draw_to_db(
         record = Participante(sorteo=sorteo, nombre=p["name"], email=p["email"])
         db.session.add(record)
         by_email[p["email"]] = record
+
+    db.session.flush()
+    for p in participants:
+        record = by_email.get(p["email"])
+        if record:
+            p["id"] = record.id
 
     for giver_email, receiver_email in exclusions:
         giver = by_email.get(giver_email)
@@ -698,7 +867,13 @@ def api_draw():
         email_status = None
         if send_emails:
             email_status = dispatch_emails(
-                participants, assignments, meta_clean, exclusions, mode_override, admin_link=draw_link
+                participants,
+                assignments,
+                meta_clean,
+                exclusions,
+                mode_override,
+                admin_link=draw_link,
+                sorteo_id=sorteo_record.id if sorteo_record else None,
             )
 
         response = {
@@ -738,6 +913,8 @@ def api_draw_resend(code: str):
     payload = request.get_json(silent=True) or {}
     mode_override = (payload.get("mode") or "").strip().lower() or None
     try:
+        if mode_override and mode_override not in {"console", "smtp"}:
+            raise AppError("Modo de email invalido. Usa console o smtp.")
         sorteo, data = load_draw_data(code)
         participants = data["participants"]
         exclusions = data["exclusions"]
@@ -752,6 +929,7 @@ def api_draw_resend(code: str):
             "deadline": "",
             "note": "",
             "admin": admin,
+            "code": sorteo.code,
         }
         email_status = dispatch_emails(
             participants,
@@ -760,8 +938,55 @@ def api_draw_resend(code: str):
             exclusions,
             mode_override,
             admin_link=build_sorteo_link(sorteo),
+            sorteo_id=sorteo.id,
         )
         return jsonify({"ok": True, "message": "Correos reenviados.", "email_status": email_status})
+    except AppError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception:
+        return jsonify({"ok": False, "error": "Error inesperado en el servidor."}), 500
+
+
+@app.route("/api/sorteo/<code>/participant/<int:participant_id>/resend", methods=["POST"])
+@app.route("/api/draw/<code>/participant/<int:participant_id>/resend", methods=["POST"])  # alias antiguo
+def api_draw_resend_participant(code: str, participant_id: int):
+    payload = request.get_json(silent=True) or {}
+    mode_override = (payload.get("mode") or "").strip().lower() or None
+    try:
+        if mode_override and mode_override not in {"console", "smtp"}:
+            raise AppError("Modo de email invalido. Usa console o smtp.")
+        sorteo, data = load_draw_data(code)
+        participants = data["participants"]
+        exclusions = data["exclusions"]
+        assignments = {item["giver_email"]: item["receiver_email"] for item in data["assignments"]}
+
+        participant = next((p for p in participants if p["id"] == participant_id), None)
+        if not participant:
+            raise AppError("Participante no encontrado en este sorteo.")
+
+        admin = next((p for p in participants if p["is_admin"]), None)
+        if not admin:
+            raise AppError("No se encontro Administrador para este sorteo.")
+
+        meta_clean = {
+            "budget": "",
+            "deadline": "",
+            "note": "",
+            "admin": admin,
+            "code": sorteo.code,
+        }
+        email_status = dispatch_emails(
+            participants,
+            assignments,
+            meta_clean,
+            exclusions,
+            mode_override,
+            admin_link=build_sorteo_link(sorteo),
+            sorteo_id=sorteo.id,
+            only_emails={participant["email"]},
+            include_admin=False,
+        )
+        return jsonify({"ok": True, "message": "Correo reenviado.", "email_status": email_status})
     except AppError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
     except Exception:

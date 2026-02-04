@@ -62,13 +62,25 @@
           <div class="table-container">
             <table class="data-table">
               <thead>
-                <tr><th>Entrega</th><th>Para</th></tr>
+                <tr><th>Entrega</th><th>Para</th><th>Estado</th><th>Acciones</th></tr>
               </thead>
               <tbody>
                 {% for a in data.assignments %}
-                <tr>
+                <tr data-giver-id="{{ a.giver_id }}">
                   <td>{{ a.giver_name }} ({{ a.giver_email }})</td>
                   <td>{{ a.receiver_name }} ({{ a.receiver_email }})</td>
+                  <td>
+                    {% if a.email_status == "sent" %}
+                      <span class="status-pill status-sent">Enviado</span>
+                    {% elif a.email_status == "error" %}
+                      <span class="status-pill status-error" {% if a.email_error %}title="{{ a.email_error|e }}"{% endif %}>Error al enviar</span>
+                    {% else %}
+                      <span class="status-pill status-muted">Sin datos</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    <button class="button ghost sm resend-single" data-participant-id="{{ a.giver_id }}">Reenviar</button>
+                  </td>
                 </tr>
                 {% endfor %}
               </tbody>
@@ -171,6 +183,64 @@
         }
       });
     }
+
+    function updateStatusBadge(participantId, status, error) {
+      const row = document.querySelector(`tr[data-giver-id='${participantId}']`);
+      const badge = row?.querySelector(".status-pill");
+      if (!badge) return;
+      badge.classList.remove("status-sent", "status-error", "status-muted");
+      if (status === "sent") {
+        badge.textContent = "Enviado";
+        badge.classList.add("status-sent");
+        badge.removeAttribute("title");
+      } else if (status === "error") {
+        badge.textContent = "Error al enviar";
+        badge.classList.add("status-error");
+        if (error) {
+          badge.setAttribute("title", error);
+        } else {
+          badge.removeAttribute("title");
+        }
+      } else {
+        badge.textContent = "Sin datos";
+        badge.classList.add("status-muted");
+        badge.removeAttribute("title");
+      }
+    }
+
+    const resendSingleButtons = document.querySelectorAll(".resend-single");
+    resendSingleButtons.forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const pid = btn.getAttribute("data-participant-id");
+        if (!pid) return;
+        setMessage("Reenviando correo...", "muted");
+        btn.disabled = true;
+        try {
+          const res = await fetch(`/api/sorteo/${drawCode}/participant/${pid}/resend`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({}),
+          });
+          const data = await res.json();
+          if (!res.ok || !data?.ok) throw new Error(data?.error || "Error al reenviar.");
+          const result = data.email_status?.results?.find((item) => String(item.participant_id) === String(pid));
+          if (result) {
+            updateStatusBadge(pid, result.status, result.error);
+            if (result.status === "error") {
+              setMessage("Error al reenviar. Revisa el estado.", "error");
+            } else {
+              setMessage("Correo reenviado.", "success");
+            }
+          } else {
+            setMessage("Correo reenviado.", "success");
+          }
+        } catch (err) {
+          setMessage(err.message || "Error al reenviar.", "error");
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    });
 
     const editButtons = document.querySelectorAll(".edit-email");
     const saveButtons = document.querySelectorAll(".save-email");
