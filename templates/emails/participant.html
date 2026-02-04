@@ -1,0 +1,26 @@
+{% extends "emails/base.html" %}
+{% block content %}
+  <div style="text-align:center; margin-bottom:10px;">
+    <img src="{{ logo_url }}" alt="Sorty" width="72" style="display:inline-block;">
+  </div>
+  <div style="font-size:14px; letter-spacing:0.4px; text-transform:uppercase; color:#5f6b7a;">Sorty</div>
+  <h2 style="margin:12px 0 10px; font-size:24px; color:#111827;">Hola {{ giver.name }},</h2>
+  <p style="font-size:16px; line-height:1.6; margin:12px 0;">Te toco regalar a <strong>{{ receiver.name }}</strong>.</p>
+  {% if budget %}
+    <p style="margin:8px 0; font-size:15px;">Presupuesto sugerido: <strong>{{ budget }}</strong></p>
+  {% endif %}
+  {% if deadline %}
+    <p style="margin:8px 0; font-size:15px;">Fecha limite: <strong>{{ deadline }}</strong></p>
+  {% endif %}
+  {% if note %}
+    <div style="margin:12px 0; padding:12px 14px; border-left:4px solid #0ea5e9; background:#f0f9ff; border-radius:8px; font-size:15px; line-height:1.5;">
+      <div style="font-weight:600; color:#0f172a;">Mensaje del grupo:</div>
+      <div style="margin-top:6px; color:#0f172a;">{{ note|safe }}</div>
+    </div>
+  {% endif %}
+  <p style="margin:14px 0 8px; font-size:15px;">Si necesitas algo, contacta a <strong>{{ admin_contact }}</strong>.</p>
+  <div style="margin-top:18px; padding:12px 14px; background:linear-gradient(135deg,#0ea5e9,#06b6d4); color:white; border-radius:10px; font-size:15px;">
+    Disfruta la sorpresa!
+  </div>
+  <p style="margin-top:14px; font-size:13px; color:#6b7280;">Enviado por {{ sender_name }}.</p>
+{% endblock %}

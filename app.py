@@ -194,44 +194,18 @@ def build_participant_email(
 
     text_body = "\n".join(text_lines)
 
-    # Inline styles para compatibilidad en emails.
-    html_parts = [
-        "<!doctype html>",
-        "<html>",
-        "<body style=\"font-family:'Segoe UI', Arial, sans-serif; background:#f6f8fb; padding:24px; color:#1d2433;\">",
-        "<div style=\"max-width:520px; margin:0 auto; background:#ffffff; border-radius:14px; padding:24px; box-shadow:0 12px 40px rgba(0,0,0,0.08);\">",
-        f"<div style='text-align:center; margin-bottom:10px;'><img src=\"{logo_url}\" alt=\"Sorty\" width=\"72\" style=\"display:inline-block;\"></div>",
-        f"<div style=\"font-size:14px; letter-spacing:0.4px; text-transform:uppercase; color:#5f6b7a;\">Sorty</div>",
-        f"<h2 style=\"margin:12px 0 10px; font-size:24px; color:#111827;\">Hola {giver['name']},</h2>",
-        f"<p style=\"font-size:16px; line-height:1.6; margin:12px 0;\">Te toco regalar a <strong>{receiver['name']}</strong>.</p>",
-    ]
-
-    if budget:
-        html_parts.append(f"<p style=\"margin:8px 0; font-size:15px;\">Presupuesto sugerido: <strong>{budget}</strong></p>")
-    if deadline:
-        html_parts.append(f"<p style=\"margin:8px 0; font-size:15px;\">Fecha limite: <strong>{deadline}</strong></p>")
-    if note:
-        html_parts.append(
-            f"<div style=\"margin:12px 0; padding:12px 14px; border-left:4px solid #0ea5e9; background:#f0f9ff; border-radius:8px; font-size:15px; line-height:1.5;\">"
-            f"<div style=\"font-weight:600; color:#0f172a;\">Mensaje del grupo:</div>"
-            f"<div style=\"margin-top:6px; color:#0f172a;\">{note}</div>"
-            f"</div>"
-        )
-
-    html_parts.append(
-        f"<p style=\"margin:14px 0 8px; font-size:15px;\">Si necesitas algo, contacta a <strong>{admin_contact}</strong>.</p>"
+    html_body = render_template(
+        "emails/participant.html",
+        giver=giver,
+        receiver=receiver,
+        budget=budget,
+        deadline=deadline,
+        note=note,
+        admin_contact=admin_contact,
+        sender_name=sender_name,
+        logo_url=logo_url,
+        max_width=520,
     )
-    html_parts.append(
-        "<div style=\"margin-top:18px; padding:12px 14px; background:linear-gradient(135deg,#0ea5e9,#06b6d4); color:white; border-radius:10px; font-size:15px;\">"
-        "Disfruta la sorpresa!"
-        "</div>"
-    )
-    html_parts.append(
-        f"<p style=\"margin-top:14px; font-size:13px; color:#6b7280;\">Enviado por {sender_name}.</p>"
-    )
-    html_parts.append("</div></body></html>")
-
-    html_body = "".join(html_parts)
     return subject_line, html_body, text_body
 
 
@@ -249,64 +223,38 @@ def build_admin_email(
     note = meta.get("note")
 
     by_email = {p["email"]: p for p in participants}
-    rows_html = []
     rows_text = []
     for giver_email, receiver_email in assignments.items():
         giver = by_email[giver_email]
         receiver = by_email[receiver_email]
-        rows_html.append(
-            f"<tr><td style='padding:8px 10px; border-bottom:1px solid #e5e7eb;'>{giver['name']}</td>"
-            f"<td style='padding:8px 10px; border-bottom:1px solid #e5e7eb; color:#0ea5e9;'>{receiver['name']}</td></tr>"
-        )
         rows_text.append(f"{giver['name']} -> {receiver['name']} ({receiver['email']})")
 
     subject = f"Resultados del Sorteo - {code}" if code else "Resultados del Sorteo - Administrador"
-    html_parts = [
-        "<!doctype html><html><body style=\"font-family:'Segoe UI', Arial, sans-serif; background:#f6f8fb; padding:24px; color:#1d2433;\">",
-        "<div style=\"max-width:560px; margin:0 auto; background:#ffffff; border-radius:14px; padding:24px; box-shadow:0 12px 40px rgba(0,0,0,0.08);\">",
-        "<div style=\"font-size:14px; letter-spacing:0.4px; text-transform:uppercase; color:#5f6b7a;\">Administrador</div>",
-        f"<h2 style=\"margin:12px 0 10px; font-size:22px; color:#111827;\">Asignaciones completas{(' - ' + code) if code else ''}</h2>",
-        "<p style='font-size:15px;'>Este correo se envía porque usted es el Administrador del sorteo y contiene todos los resultados. Si desea ver únicamente a quién le ha tocado, por favor revise el otro correo.</p>",
-        "<table style='width:100%; border-collapse:collapse; margin-top:10px; font-size:15px;'>",
-        "<thead><tr><th style='text-align:left; padding:8px 10px; color:#6b7280;'>Entrega</th><th style='text-align:left; padding:8px 10px; color:#6b7280;'>Para</th></tr></thead>",
-        "<tbody>",
-        "".join(rows_html),
-        "</tbody></table>",
+    rows = [
+        {"giver_name": by_email[giver_email]["name"], "receiver_name": by_email[receiver_email]["name"]}
+        for giver_email, receiver_email in assignments.items()
     ]
+    exclusions_view = []
+    for giver_email, receiver_email in exclusions:
+        giver = by_email.get(giver_email)
+        receiver = by_email.get(receiver_email)
+        if giver and receiver:
+            exclusions_view.append(
+                {"giver_name": giver["name"], "receiver_name": receiver["name"]}
+            )
 
-    if exclusions:
-        html_parts.append(
-            "<div style='margin-top:16px; padding:12px 14px; background:#0f172a; border:1px solid #1f2937; border-radius:10px;'>"
-            "<div style='font-weight:600; color:#e5e7eb; margin-bottom:6px;'>Exclusiones cargadas</div>"
-        )
-        for giver_email, receiver_email in exclusions:
-            giver = by_email.get(giver_email)
-            receiver = by_email.get(receiver_email)
-            if giver and receiver:
-                html_parts.append(
-                    f"<div style='color:#cbd5e1; font-size:14px; margin:4px 0;'>{giver['name']} no regala a {receiver['name']}</div>"
-                )
-        html_parts.append("</div>")
-
-    if budget or deadline or note:
-        html_parts.append("<div style='margin-top:16px; padding:12px 14px; background:#f9fafb; border-radius:10px; border:1px solid #e5e7eb;'>")
-        if budget:
-            html_parts.append(f"<div style='margin:4px 0;'><strong>Presupuesto:</strong> {budget}</div>")
-        if deadline:
-            html_parts.append(f"<div style='margin:4px 0;'><strong>Fecha limite:</strong> {deadline}</div>")
-        if note:
-            html_parts.append(f"<div style='margin:4px 0;'><strong>Mensaje:</strong> {note}</div>")
-        html_parts.append("</div>")
-
-    if admin_link:
-        html_parts.append(
-            f"<p style='margin-top:16px;'><a href='{admin_link}' style='color:#0ea5e9; font-weight:600;'>Ver sorteo completo o reenviar correos</a></p>"
-        )
-
-    html_parts.append(
-        f"<p style='margin-top:16px; font-size:13px; color:#6b7280;'>Enviado por {sender_name}.</p>"
+    html_body = render_template(
+        "emails/admin.html",
+        rows=rows,
+        exclusions=exclusions_view,
+        budget=budget,
+        deadline=deadline,
+        note=note,
+        admin_link=admin_link,
+        sender_name=sender_name,
+        code=code,
+        max_width=560,
     )
-    html_parts.append("</div></body></html>")
 
     text_lines = ["Asignaciones completas Sorty:", ""]
     text_lines.extend(rows_text)
@@ -329,7 +277,6 @@ def build_admin_email(
         text_lines.append("")
         text_lines.append(f"Ver sorteo: {admin_link}")
 
-    html_body = "".join(html_parts)
     text_body = "\n".join(text_lines)
     return subject, html_body, text_body
 
@@ -639,6 +586,55 @@ def landing():
 def index():
     email_mode = os.getenv("EMAIL_MODE", "smtp").lower()
     return render_template("index.html", email_mode=email_mode)
+
+
+@app.route("/preview/email/participant", methods=["GET"])
+def preview_participant_email():
+    giver = {"name": "Carla", "email": "carla@example.com"}
+    receiver = {"name": "Pablo", "email": "pablo@example.com"}
+    meta = {
+        "budget": "20 USD",
+        "deadline": "20/12",
+        "note": "Traer regalo envuelto.",
+    }
+    _, html_body, _ = build_participant_email(
+        giver,
+        receiver,
+        meta,
+        admin_contact="Nora (admin)",
+        sender_name="Sorty",
+    )
+    return html_body
+
+
+@app.route("/preview/email/admin", methods=["GET"])
+def preview_admin_email():
+    participants = [
+        {"name": "Nora", "email": "nora@example.com", "is_admin": True},
+        {"name": "Carla", "email": "carla@example.com", "is_admin": False},
+        {"name": "Pablo", "email": "pablo@example.com", "is_admin": False},
+    ]
+    assignments = {
+        "nora@example.com": "carla@example.com",
+        "carla@example.com": "pablo@example.com",
+        "pablo@example.com": "nora@example.com",
+    }
+    exclusions = [("carla@example.com", "nora@example.com")]
+    meta = {
+        "budget": "20 USD",
+        "deadline": "20/12",
+        "note": "Intercambio presencial.",
+    }
+    _, html_body, _ = build_admin_email(
+        assignments,
+        participants,
+        meta,
+        sender_name="Sorty",
+        exclusions=exclusions,
+        admin_link="https://sorty.example/sorteo/ABC123",
+        code="ABC123",
+    )
+    return html_body
 
 
 @app.route("/favicon.ico")
