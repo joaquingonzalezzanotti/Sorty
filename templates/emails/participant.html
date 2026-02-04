@@ -1,26 +1,56 @@
 {% extends "emails/base.html" %}
 {% block content %}
-  <div style="text-align:center; margin-bottom:10px;">
-    <img src="{{ logo_url }}" alt="Sorty" width="72" style="display:inline-block;">
-  </div>
-  <div style="font-size:14px; letter-spacing:0.4px; text-transform:uppercase; color:#5f6b7a;">Sorty</div>
-  <h2 style="margin:12px 0 10px; font-size:24px; color:#111827;">Hola {{ giver.name }},</h2>
-  <p style="font-size:16px; line-height:1.6; margin:12px 0;">Te toco regalar a <strong>{{ receiver.name }}</strong>.</p>
-  {% if budget %}
-    <p style="margin:8px 0; font-size:15px;">Presupuesto sugerido: <strong>{{ budget }}</strong></p>
+  <table style="width:100%; border-collapse:collapse; margin-bottom:10px;">
+    <tr>
+      <td style="text-align:left; font-size:12px; letter-spacing:1.2px; text-transform:uppercase; color:#6b7280; font-weight:600;">
+        Sorty
+      </td>
+      <td style="text-align:right;">
+        <img src="{{ logo_url }}" alt="Sorty" width="40" style="display:block;">
+      </td>
+    </tr>
+  </table>
+
+  <h2 style="margin:8px 0 6px; font-size:24px; color:#111827;">Hola {{ giver.name }},</h2>
+  <p style="margin:0 0 16px; font-size:16px; color:#374151;">
+    Te toco regalar a <strong style="color:#0f172a;">{{ receiver.name }}</strong>.
+  </p>
+
+  {% if budget or deadline %}
+    <div style="margin:10px 0 18px; padding:12px 14px; background:#f8fafc; border:1px solid #e5e7eb; border-radius:12px;">
+      <table style="width:100%; border-collapse:collapse; font-size:15px;">
+        {% if budget %}
+          <tr>
+            <td style="padding:4px 0; color:#6b7280;">Presupuesto sugerido</td>
+            <td style="padding:4px 0; text-align:right; font-weight:600; color:#111827;">{{ budget }}</td>
+          </tr>
+        {% endif %}
+        {% if deadline %}
+          <tr>
+            <td style="padding:4px 0; color:#6b7280;">Fecha limite</td>
+            <td style="padding:4px 0; text-align:right; font-weight:600; color:#111827;">{{ deadline }}</td>
+          </tr>
+        {% endif %}
+      </table>
+    </div>
   {% endif %}
-  {% if deadline %}
-    <p style="margin:8px 0; font-size:15px;">Fecha limite: <strong>{{ deadline }}</strong></p>
-  {% endif %}
+
   {% if note %}
-    <div style="margin:12px 0; padding:12px 14px; border-left:4px solid #0ea5e9; background:#f0f9ff; border-radius:8px; font-size:15px; line-height:1.5;">
-      <div style="font-weight:600; color:#0f172a;">Mensaje del grupo:</div>
+    <div style="margin:12px 0 18px; padding:14px 16px; border-left:4px solid #0ea5e9; background:#f0f9ff; border-radius:10px; font-size:15px; line-height:1.5;">
+      <div style="font-weight:600; color:#0f172a;">Mensaje del grupo</div>
       <div style="margin-top:6px; color:#0f172a;">{{ note|safe }}</div>
     </div>
   {% endif %}
-  <p style="margin:14px 0 8px; font-size:15px;">Si necesitas algo, contacta a <strong>{{ admin_contact }}</strong>.</p>
-  <div style="margin-top:18px; padding:12px 14px; background:linear-gradient(135deg,#0ea5e9,#06b6d4); color:white; border-radius:10px; font-size:15px;">
-    Disfruta la sorpresa!
+
+  <p style="margin:0 0 16px; font-size:15px; color:#374151;">
+    Si necesitas algo, contacta a <strong>{{ admin_contact }}</strong>.
+  </p>
+
+  <div style="text-align:center; margin:8px 0 14px;">
+    <span style="display:block; padding:12px 16px; background:linear-gradient(135deg,#0ea5e9,#06b6d4); color:#ffffff; border-radius:12px; font-size:15px; font-weight:600;">
+      Disfruta la sorpresa!
+    </span>
   </div>
-  <p style="margin-top:14px; font-size:13px; color:#6b7280;">Enviado por {{ sender_name }}.</p>
+
+  <p style="margin:0; font-size:13px; color:#6b7280;">Enviado por {{ sender_name }}.</p>
 {% endblock %}

@@ -1,38 +1,52 @@
 {% extends "emails/base.html" %}
 {% block content %}
-  <div style="font-size:14px; letter-spacing:0.4px; text-transform:uppercase; color:#5f6b7a;">Administrador</div>
-  <h2 style="margin:12px 0 10px; font-size:22px; color:#111827;">
+  <table style="width:100%; border-collapse:collapse; margin-bottom:10px;">
+    <tr>
+      <td style="text-align:left; font-size:12px; letter-spacing:1.2px; text-transform:uppercase; color:#6b7280; font-weight:600;">
+        Sorty
+      </td>
+      <td style="text-align:right; font-size:12px; letter-spacing:1.2px; text-transform:uppercase; color:#94a3b8; font-weight:600;">
+        Administrador
+      </td>
+    </tr>
+  </table>
+
+  <h2 style="margin:8px 0 10px; font-size:22px; color:#111827;">
     Asignaciones completas{% if code %} - {{ code }}{% endif %}
   </h2>
-  <p style="font-size:15px;">
+  <p style="font-size:15px; color:#374151; margin:0 0 14px;">
     Este correo se envía porque usted es el Administrador del sorteo y contiene todos los resultados. Si desea ver únicamente a quién le ha tocado, por favor revise el otro correo.
   </p>
-  <table style="width:100%; border-collapse:collapse; margin-top:10px; font-size:15px;">
-    <thead>
-      <tr>
-        <th style="text-align:left; padding:8px 10px; color:#6b7280;">Entrega</th>
-        <th style="text-align:left; padding:8px 10px; color:#6b7280;">Para</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for row in rows %}
-        <tr>
-          <td style="padding:8px 10px; border-bottom:1px solid #e5e7eb;">{{ row.giver_name }}</td>
-          <td style="padding:8px 10px; border-bottom:1px solid #e5e7eb; color:#0ea5e9;">{{ row.receiver_name }}</td>
+  <div style="border:1px solid #e5e7eb; border-radius:12px; overflow:hidden;">
+    <table style="width:100%; border-collapse:collapse; font-size:15px;">
+      <thead>
+        <tr style="background:#f8fafc;">
+          <th style="text-align:left; padding:10px 12px; color:#6b7280;">Entrega</th>
+          <th style="text-align:left; padding:10px 12px; color:#6b7280;">Para</th>
         </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            <td style="padding:10px 12px; border-bottom:1px solid #e5e7eb;">{{ row.giver_name }}</td>
+            <td style="padding:10px 12px; border-bottom:1px solid #e5e7eb; color:#0ea5e9;">{{ row.receiver_name }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
   {% if exclusions %}
-    <div style="margin-top:16px; padding:12px 14px; background:#0f172a; border:1px solid #1f2937; border-radius:10px;">
+    <div style="margin-top:16px; padding:12px 14px; background:#0f172a; border:1px solid #1f2937; border-radius:12px;">
       <div style="font-weight:600; color:#e5e7eb; margin-bottom:6px;">Exclusiones cargadas</div>
       {% for ex in exclusions %}
         <div style="color:#cbd5e1; font-size:14px; margin:4px 0;">{{ ex.giver_name }} no regala a {{ ex.receiver_name }}</div>
       {% endfor %}
     </div>
   {% endif %}
+
   {% if budget or deadline or note %}
-    <div style="margin-top:16px; padding:12px 14px; background:#f9fafb; border-radius:10px; border:1px solid #e5e7eb;">
+    <div style="margin-top:16px; padding:12px 14px; background:#f8fafc; border-radius:12px; border:1px solid #e5e7eb;">
       {% if budget %}
         <div style="margin:4px 0;"><strong>Presupuesto:</strong> {{ budget }}</div>
       {% endif %}
@@ -44,10 +58,12 @@
       {% endif %}
     </div>
   {% endif %}
+
   {% if admin_link %}
     <p style="margin-top:16px;">
       <a href="{{ admin_link }}" style="color:#0ea5e9; font-weight:600;">Ver sorteo completo o reenviar correos</a>
     </p>
   {% endif %}
+
   <p style="margin-top:16px; font-size:13px; color:#6b7280;">Enviado por {{ sender_name }}.</p>
 {% endblock %}
