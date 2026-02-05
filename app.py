@@ -1,11 +1,14 @@
+import imaplib
 import os
 import random
+import re
 import smtplib
 import ssl
 import threading
 import uuid
 import webbrowser
 from datetime import datetime
+from email import message_from_bytes
 from email.message import EmailMessage
 from email.utils import formataddr
 from typing import Dict, List, Optional, Set, Tuple
@@ -220,6 +223,166 @@ def attach_inline_logo(msg: EmailMessage, inline_logo: Optional[dict]) -> None:
         subtype=inline_logo["subtype"],
         cid=inline_logo["cid"],
     )
+
+
+def imap_configured() -> bool:
+    return bool(os.getenv("IMAP_HOST") and os.getenv("IMAP_USER") and os.getenv("IMAP_PASS"))
+
+
+def extract_emails(text: str) -> Set[str]:
+    return {match.lower() for match in re.findall(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", text, re.I)}
+
+
+def is_bounce_message(msg: EmailMessage) -> bool:
+    subject = (msg.get("Subject") or "").lower()
+    sender = (msg.get("From") or "").lower()
+    if "mailer-daemon" in sender or "mail delivery subsystem" in sender:
+        return True
+    return "delivery status notification" in subject or "undelivered" in subject or "address not found" in subject
+
+
+def extract_bounce_data(msg: EmailMessage) -> Tuple[Set[str], Optional[str]]:
+    recipients: Set[str] = set()
+    diagnostic = None
+
+    for part in msg.walk():
+        content_type = part.get_content_type()
+        if content_type == "message/delivery-status":
+            payload = part.get_payload()
+            blocks = payload if isinstance(payload, list) else []
+            for block in blocks:
+                for key in ("Final-Recipient", "Original-Recipient"):
+                    value = block.get(key)
+                    if value:
+                        recipients.update(extract_emails(value))
+                if not diagnostic:
+                    diag = block.get("Diagnostic-Code")
+                    if diag:
+                        diagnostic = str(diag)
+        elif content_type == "text/plain":
+            try:
+                charset = part.get_content_charset() or "utf-8"
+                text_bytes = part.get_payload(decode=True)
+                if text_bytes:
+                    text = text_bytes.decode(charset, errors="replace")
+                else:
+                    text = part.get_payload()
+                if text:
+                    recipients.update(extract_emails(text))
+                    if not diagnostic:
+                        for line in text.splitlines():
+                            if "diagnostic-code" in line.lower():
+                                diagnostic = line.split(":", 1)[-1].strip()
+                                break
+            except Exception:
+                continue
+
+    if not recipients:
+        for header in ("Final-Recipient", "Original-Recipient", "To"):
+            value = msg.get(header)
+            if value:
+                recipients.update(extract_emails(value))
+
+    if not diagnostic:
+        subject = msg.get("Subject")
+        if subject:
+            diagnostic = subject.strip()
+
+    if diagnostic:
+        diagnostic = diagnostic.strip()
+        if len(diagnostic) > 255:
+            diagnostic = diagnostic[:252] + "..."
+
+    return recipients, diagnostic
+
+
+def poll_bounces_for_draw(sorteo_id: int) -> dict:
+    if not ensure_email_tracking_table():
+        return {"ok": False, "error": "No se pudo preparar el tracking de emails."}
+    if not imap_configured():
+        return {"ok": False, "error": "IMAP no configurado."}
+
+    sorteo = Sorteo.query.get(sorteo_id)
+    if not sorteo:
+        return {"ok": False, "error": "Sorteo no encontrado."}
+
+    participant_map = {normalize_email(p.email): p.id for p in sorteo.participantes}
+    if not participant_map:
+        return {"ok": True, "updated": 0}
+
+    host = os.getenv("IMAP_HOST")
+    port = int(os.getenv("IMAP_PORT", "993"))
+    user = os.getenv("IMAP_USER")
+    password = os.getenv("IMAP_PASS")
+    folder = os.getenv("IMAP_FOLDER", "INBOX")
+
+    updated = 0
+    try:
+        with imaplib.IMAP4_SSL(host, port) as imap:
+            imap.login(user, password)
+            imap.select(folder)
+            status, data = imap.search(None, "UNSEEN")
+            if status != "OK":
+                return {"ok": False, "error": "No se pudo leer el inbox de rebotes."}
+            for uid in data[0].split():
+                status, msg_data = imap.fetch(uid, "(RFC822)")
+                if status != "OK":
+                    continue
+                raw = next((item[1] for item in msg_data if isinstance(item, tuple)), None)
+                if not raw:
+                    continue
+                msg = message_from_bytes(raw)
+                if not is_bounce_message(msg):
+                    continue
+                recipients, diagnostic = extract_bounce_data(msg)
+                if not recipients:
+                    continue
+                matched = {email for email in recipients if email in participant_map}
+                if not matched:
+                    continue
+                error = diagnostic or "Correo rechazado."
+                for email_addr in matched:
+                    participant_id = participant_map[email_addr]
+                    record = EmailEnvio.query.filter_by(
+                        sorteo_id=sorteo_id, participant_id=participant_id
+                    ).first()
+                    if record:
+                        record.status = "error"
+                        record.error = error
+                        record.updated_at = datetime.utcnow()
+                    else:
+                        db.session.add(
+                            EmailEnvio(
+                                sorteo_id=sorteo_id,
+                                participant_id=participant_id,
+                                status="error",
+                                error=error,
+                                updated_at=datetime.utcnow(),
+                            )
+                        )
+                    updated += 1
+                imap.store(uid, "+FLAGS", "\\Seen")
+
+        db.session.commit()
+        return {"ok": True, "updated": updated}
+    except Exception as exc:
+        db.session.rollback()
+        return {"ok": False, "error": str(exc)}
+
+
+def schedule_bounce_polls(sorteo_id: int) -> None:
+    if not imap_configured():
+        return
+    delays = [5 * 60, 2 * 60 * 60]
+    for delay in delays:
+        timer = threading.Timer(delay, lambda sid=sorteo_id: run_bounce_poll(sid))
+        timer.daemon = True
+        timer.start()
+
+
+def run_bounce_poll(sorteo_id: int) -> None:
+    with app.app_context():
+        poll_bounces_for_draw(sorteo_id)
 
 
 def build_participant_email(
@@ -875,6 +1038,8 @@ def api_draw():
                 admin_link=draw_link,
                 sorteo_id=sorteo_record.id if sorteo_record else None,
             )
+            if email_status and email_status.get("mode") == "smtp" and sorteo_record:
+                schedule_bounce_polls(sorteo_record.id)
 
         response = {
             "ok": True,
@@ -940,6 +1105,8 @@ def api_draw_resend(code: str):
             admin_link=build_sorteo_link(sorteo),
             sorteo_id=sorteo.id,
         )
+        if email_status and email_status.get("mode") == "smtp":
+            schedule_bounce_polls(sorteo.id)
         return jsonify({"ok": True, "message": "Correos reenviados.", "email_status": email_status})
     except AppError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
@@ -986,6 +1153,8 @@ def api_draw_resend_participant(code: str, participant_id: int):
             only_emails={participant["email"]},
             include_admin=False,
         )
+        if email_status and email_status.get("mode") == "smtp":
+            schedule_bounce_polls(sorteo.id)
         return jsonify({"ok": True, "message": "Correo reenviado.", "email_status": email_status})
     except AppError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
