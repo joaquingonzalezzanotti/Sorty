@@ -1887,6 +1887,12 @@ th {
 }
 
 @media (max-width: 980px) {
+  .landing-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 860px) {
   .landing-grid {
     grid-template-columns: 1fr;
   }
@@ -1894,10 +1900,6 @@ th {
   .landing-preview {
     justify-content: center;
     margin-top: 0;
-  }
-
-  .landing-cards {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
