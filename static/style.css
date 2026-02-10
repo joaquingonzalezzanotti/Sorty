@@ -1670,9 +1670,9 @@ th {
 
 .landing-grid {
   display: grid;
-  grid-template-columns: 1.3fr minmax(280px, 380px);
-  gap: 22px;
-  align-items: center;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
+  gap: clamp(18px, 2.5vw, 32px);
+  align-items: start;
 }
 
 .landing-actions {
@@ -1684,7 +1684,9 @@ th {
 
 .landing-preview {
   display: flex;
-  justify-content: center;
+  justify-content: flex-end;
+  align-self: start;
+  margin-top: 18px;
 }
 
 .preview-card {
@@ -1884,9 +1886,14 @@ th {
   }
 }
 
-@media (max-width: 1024px) {
+@media (max-width: 980px) {
   .landing-grid {
     grid-template-columns: 1fr;
+  }
+
+  .landing-preview {
+    justify-content: center;
+    margin-top: 0;
   }
 
   .landing-cards {
