@@ -1670,9 +1670,14 @@ th {
 
 .landing-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 380px);
   gap: clamp(18px, 2.5vw, 32px);
   align-items: start;
+}
+
+.landing-grid > :first-child {
+  grid-column: 1;
+  grid-row: 1;
 }
 
 .landing-actions {
@@ -1684,6 +1689,8 @@ th {
 
 .landing-preview {
   display: flex;
+  grid-column: 2;
+  grid-row: 1;
   justify-content: flex-end;
   align-self: start;
   margin-top: 18px;
@@ -1892,12 +1899,14 @@ th {
   }
 }
 
-@media (max-width: 860px) {
+@media (max-width: 740px) {
   .landing-grid {
     grid-template-columns: 1fr;
   }
 
   .landing-preview {
+    grid-column: 1;
+    grid-row: auto;
     justify-content: center;
     margin-top: 0;
   }
