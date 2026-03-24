@@ -1,9 +1,9 @@
 import uuid
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import CheckConstraint, UniqueConstraint, text
+from sqlalchemy import CheckConstraint, UniqueConstraint
 
 db = SQLAlchemy()
 
@@ -33,9 +33,9 @@ class Sorteo(db.Model):
   email_admin = db.Column(db.String(320), nullable=False)  # sin encriptar
   estado = db.Column(db.String(20), nullable=False, default="borrador")
 
-  fecha_creacion = db.Column(db.DateTime(timezone=True), server_default=text("now()"), nullable=False)
+  fecha_creacion = db.Column(db.DateTime(timezone=True), default=datetime.utcnow, nullable=False)
   fecha_expiracion = db.Column(
-    db.DateTime(timezone=True), server_default=text("now() + interval '7 days'"), nullable=False
+    db.DateTime(timezone=True), default=lambda: datetime.utcnow() + timedelta(days=7), nullable=False
   )
 
   participantes = db.relationship(

@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="es">
 <head>
   <meta charset="utf-8">
@@ -25,8 +25,8 @@
       <button id="theme-toggle" class="theme-toggle" aria-label="Cambiar tema">
         <span class="theme-toggle-track">
           <span class="theme-toggle-thumb">
-            <span class="theme-toggle-icon sun" aria-hidden="true">☀</span>
-            <span class="theme-toggle-icon moon" aria-hidden="true">☾</span>
+            <span class="theme-toggle-icon sun" aria-hidden="true">&#9728;</span>
+            <span class="theme-toggle-icon moon" aria-hidden="true">&#9790;</span>
           </span>
         </span>
       </button>
@@ -43,21 +43,21 @@
           <div>
             <p class="eyebrow">Vista de Administrador</p>
             <h1 class="page-title">{{ data.name or "Sorteo" }}</h1>
-            <p class="muted">Código: {{ data.code }} · Admin: {{ data.email_admin }}</p>
+            <p class="muted">Codigo: {{ data.code }} · {{ "Admin" if data.channel == "email" else "Admin WhatsApp" }}: {{ data.admin_contact or data.email_admin }}</p>
           </div>
           <div class="pill">Enlace directo listo para compartir</div>
         </div>
 
         <div class="actions-row wrap">
           <button class="button ghost sm" id="copy-link">Copiar enlace</button>
-          <button class="button primary sm" id="resend-btn">Reenviar correos</button>
+          <button class="button primary sm" id="resend-btn">Reenviar mensajes</button>
           <div id="action-msg" class="muted"></div>
         </div>
 
         <div class="panel">
           <div class="panel-header">
             <p class="eyebrow">Asignaciones</p>
-            <p class="muted small">No cambian aunque edites correos; solo afectan reenvíos.</p>
+            <p class="muted small">No cambian aunque edites contactos; solo afectan reenvios.</p>
           </div>
           <div class="table-container">
             <table class="data-table">
@@ -67,8 +67,8 @@
               <tbody>
                 {% for a in data.assignments %}
                 <tr>
-                  <td>{{ a.giver_name }} ({{ a.giver_email }})</td>
-                  <td>{{ a.receiver_name }} ({{ a.receiver_email }})</td>
+                  <td>{{ a.giver_name }} ({{ a.giver_contact or a.giver_email }})</td>
+                  <td>{{ a.receiver_name }} ({{ a.receiver_contact or a.receiver_email }})</td>
                 </tr>
                 {% endfor %}
               </tbody>
@@ -79,7 +79,7 @@
         <div class="panel">
           <div class="panel-header">
             <p class="eyebrow">Participantes</p>
-            <p class="muted small">Editar email no cambia asignaciones; afecta a reenvíos. Puedes avisar al correo anterior.</p>
+            <p class="muted small">Editar contacto no cambia asignaciones; afecta a reenvios.</p>
           </div>
           <div class="participant-list">
             {% for p in data.participants %}
@@ -89,12 +89,18 @@
                   <span class="name">{{ p.name }}</span>
                   {% if p.is_admin %}<span class="tag">Admin</span>{% endif %}
                 </div>
-                <div class="muted email">{{ p.email }}</div>
+                <div class="muted email">{{ p.contact or p.email }}</div>
               </div>
               <div class="participant-actions">
-                <input type="email" value="{{ p.email }}" data-participant-id="{{ p.id }}" class="input sm email-input" disabled>
+                <input
+                  type="{{ 'email' if data.channel == 'email' else 'text' }}"
+                  value="{{ p.contact or p.email }}"
+                  data-participant-id="{{ p.id }}"
+                  class="input sm email-input"
+                  disabled
+                >
                 <label class="inline-checkbox">
-                  <input type="checkbox" data-notify-id="{{ p.id }}" disabled> Notificar correo anterior
+                  <input type="checkbox" data-notify-id="{{ p.id }}" disabled> Notificar contacto anterior
                 </label>
                 <div class="action-buttons">
                   <button class="button ghost sm edit-email" data-participant-id="{{ p.id }}">Editar</button>
@@ -115,12 +121,14 @@
     const savedTheme = localStorage.getItem(themeKey) || "light";
     const body = document.querySelector("body");
     const themeToggle = document.getElementById("theme-toggle");
+
     function setTheme(value) {
       const theme = value === "dark" ? "dark" : "light";
       body.classList.toggle("theme-dark", theme === "dark");
       localStorage.setItem(themeKey, theme);
     }
     setTheme(savedTheme);
+
     if (themeToggle) {
       themeToggle.addEventListener("click", () => {
         const next = body.classList.contains("theme-dark") ? "light" : "dark";
@@ -131,8 +139,9 @@
     const resendBtn = document.getElementById("resend-btn");
     const copyBtn = document.getElementById("copy-link");
     const msg = document.getElementById("action-msg");
-    const drawCode = "{{ data.code }}";
-    const drawLink = "{{ draw_link }}";
+    const drawCode = {{ data.code | tojson }};
+    const drawLink = {{ draw_link | tojson }};
+    const drawChannel = {{ data.channel | tojson }};
 
     function setMessage(text, cls = "") {
       if (!msg) return;
@@ -153,7 +162,7 @@
 
     if (resendBtn) {
       resendBtn.addEventListener("click", async () => {
-        setMessage("Reenviando correos...", "muted");
+        setMessage("Reenviando mensajes...", "muted");
         resendBtn.disabled = true;
         try {
           const res = await fetch(`/api/sorteo/${drawCode}/resend`, {
@@ -163,7 +172,8 @@
           });
           const data = await res.json();
           if (!res.ok || !data?.ok) throw new Error(data?.error || "Error al reenviar.");
-          setMessage("Correos reenviados.", "success");
+          const okText = drawChannel === "email" ? "Correos reenviados." : "Mensajes de WhatsApp reenviados.";
+          setMessage(okText, "success");
         } catch (err) {
           setMessage(err.message || "Error al reenviar.", "error");
         } finally {
@@ -174,6 +184,7 @@
 
     const editButtons = document.querySelectorAll(".edit-email");
     const saveButtons = document.querySelectorAll(".save-email");
+
     editButtons.forEach((btn) => {
       btn.addEventListener("click", () => {
         const pid = btn.getAttribute("data-participant-id");
@@ -188,30 +199,34 @@
         input.select();
       });
     });
+
     saveButtons.forEach((btn) => {
       btn.addEventListener("click", async () => {
         const pid = btn.getAttribute("data-participant-id");
         const input = document.querySelector(`input[data-participant-id='${pid}']`);
         const notify = document.querySelector(`input[data-notify-id='${pid}']`);
         if (!input) return;
-        const email = input.value.trim();
-        setMessage("Guardando email...", "muted");
+
+        const contact = input.value.trim();
+        setMessage("Guardando contacto...", "muted");
         btn.disabled = true;
+
         try {
-          const res = await fetch(`/api/sorteo/${drawCode}/participant/${pid}/email`, {
+          const res = await fetch(`/api/sorteo/${drawCode}/participant/${pid}/contact`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email, notify_previous: notify?.checked }),
+            body: JSON.stringify({ contact, notify_previous: notify?.checked }),
           });
           const data = await res.json();
           if (!res.ok || !data?.ok) throw new Error(data?.error || "Error al guardar.");
-          input.value = data.participant.email;
+          input.value = data.participant.contact || data.participant.email;
           input.disabled = true;
           if (notify) notify.disabled = true;
           btn.disabled = true;
-          setMessage("Email actualizado. Reenvía cuando quieras.", "success");
+          setMessage("Contacto actualizado. Reenvia cuando quieras.", "success");
         } catch (err) {
           setMessage(err.message || "Error al guardar.", "error");
+          btn.disabled = false;
         }
       });
     });

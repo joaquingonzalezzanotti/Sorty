@@ -1,8 +1,12 @@
 import os
+import json
 import random
+import re
 import smtplib
 import ssl
 import threading
+import urllib.error
+import urllib.request
 import uuid
 import webbrowser
 from email.message import EmailMessage
@@ -42,36 +46,91 @@ app = Flask(__name__, static_folder="static", template_folder="templates")
 app.config["SQLALCHEMY_DATABASE_URI"] = resolve_database_uri()
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 db.init_app(app)
+_schema_initialized = False
 
 
 class AppError(Exception):
     """Errors that should be surfaced to the client with a friendly message."""
 
 
+DRAW_CHANNELS = {"email", "whatsapp"}
+WHATSAPP_E164_RE = re.compile(r"^\+[1-9]\d{7,14}$")
+DEFAULT_KAPSO_PHONE_NUMBER_ID = "1116659434858231"
+
+
+def normalize_channel(value: Optional[str]) -> str:
+    channel = (value or "email").strip().lower()
+    if channel not in DRAW_CHANNELS:
+        raise AppError("Canal invalido. Usa email o whatsapp.")
+    return channel
+
+
 def normalize_email(value: str) -> str:
     return value.strip().lower()
 
 
-def validate_participants(raw: List[dict]) -> List[dict]:
+def normalize_whatsapp(value: str) -> str:
+    raw = (value or "").strip()
+    if raw.startswith("00"):
+        raw = "+" + raw[2:]
+    compact = re.sub(r"[\s\-().]", "", raw)
+    if not compact.startswith("+"):
+        raise AppError("Numero invalido. Usa formato internacional E.164, por ejemplo +5491122334455.")
+
+    normalized = "+" + re.sub(r"\D", "", compact[1:])
+    if not WHATSAPP_E164_RE.match(normalized):
+        raise AppError("Numero invalido. Usa formato internacional E.164, por ejemplo +5491122334455.")
+    return normalized
+
+
+def normalize_contact(value: str, channel: str, participant_name: Optional[str] = None) -> str:
+    if channel == "email":
+        email = normalize_email(value)
+        if "@" not in email or "." not in email:
+            target = f" para {participant_name}" if participant_name else ""
+            raise AppError(f"Email invalido{target}.")
+        return email
+
+    phone = normalize_whatsapp(value)
+    return phone
+
+
+def infer_channel_from_contact(contact: str) -> str:
+    return "email" if "@" in (contact or "") else "whatsapp"
+
+
+def ensure_database_schema() -> None:
+    global _schema_initialized
+    if _schema_initialized:
+        return
+    with app.app_context():
+        db.create_all()
+    _schema_initialized = True
+
+
+def validate_participants(raw: List[dict], channel: str) -> List[dict]:
     participants: List[dict] = []
-    seen_emails: Set[str] = set()
+    seen_contacts: Set[str] = set()
     admin_count = 0
 
     for item in raw:
         name = (item.get("name") or "").strip()
-        email = normalize_email(item.get("email") or "")
+        raw_contact = item.get("contact")
+        if raw_contact is None:
+            raw_contact = item.get("email")
+        contact = normalize_contact(raw_contact or "", channel, participant_name=name)
         is_admin = bool(item.get("is_admin"))
 
         if not name:
             raise AppError("Cada participante necesita un nombre.")
-        if "@" not in email or "." not in email:
-            raise AppError(f"Email invalido para {name}.")
-        if email in seen_emails:
-            raise AppError(f"Email duplicado: {email}")
+        if contact in seen_contacts:
+            if channel == "email":
+                raise AppError(f"Email duplicado: {contact}")
+            raise AppError(f"Numero duplicado: {contact}")
 
-        seen_emails.add(email)
+        seen_contacts.add(contact)
         admin_count += 1 if is_admin else 0
-        participants.append({"name": name, "email": email, "is_admin": is_admin})
+        participants.append({"name": name, "email": contact, "contact": contact, "is_admin": is_admin})
 
     if len(participants) < 3:
         raise AppError("Carga al menos tres participantes.")
@@ -81,16 +140,16 @@ def validate_participants(raw: List[dict]) -> List[dict]:
     return participants
 
 
-def validate_exclusions(
-    raw: List[dict], allowed_emails: Set[str]
-) -> List[Tuple[str, str]]:
+def validate_exclusions(raw: List[dict], allowed_contacts: Set[str], channel: str) -> List[Tuple[str, str]]:
     exclusions: List[Tuple[str, str]] = []
     for item in raw:
-        giver = normalize_email(item.get("from") or "")
-        receiver = normalize_email(item.get("to") or "")
+        giver_raw = (item.get("from") or "").strip()
+        receiver_raw = (item.get("to") or "").strip()
+        giver = normalize_contact(giver_raw, channel) if giver_raw else ""
+        receiver = normalize_contact(receiver_raw, channel) if receiver_raw else ""
         if not giver or not receiver:
             continue
-        if giver not in allowed_emails or receiver not in allowed_emails:
+        if giver not in allowed_contacts or receiver not in allowed_contacts:
             raise AppError("Las exclusiones deben referenciar participantes validos.")
         if giver == receiver:
             # No hace falta agregar la exclusion a si mismo: ya esta prohibido.
@@ -323,6 +382,81 @@ def build_admin_email(
     return subject, html_body, text_body
 
 
+def phone_to_wa_id(phone_number: str) -> str:
+    return re.sub(r"\D", "", phone_number)
+
+
+def build_participant_whatsapp_text(
+    giver: dict,
+    receiver: dict,
+    meta: dict,
+    admin_contact: str,
+) -> str:
+    budget = meta.get("budget")
+    deadline = meta.get("deadline")
+    note = meta.get("note")
+
+    lines = [
+        f"Hola {giver['name']}!",
+        f"Te toco regalar a: {receiver['name']}.",
+    ]
+    if budget:
+        lines.append(f"Presupuesto sugerido: {budget}.")
+    if deadline:
+        lines.append(f"Fecha limite: {deadline}.")
+    if note:
+        lines.append(f"Mensaje grupal: {note}")
+    lines.append(f"Si necesitas ayuda, contacta a {admin_contact}.")
+    lines.append("Sorty")
+    return "\n".join(lines)
+
+
+def build_admin_whatsapp_text(
+    admin_name: str,
+    code: Optional[str],
+    admin_link: Optional[str],
+) -> str:
+    lines = [
+        f"Hola {admin_name}!",
+        "Tu sorteo de Sorty ya fue generado.",
+    ]
+    if code:
+        lines.append(f"Codigo: {code}")
+    if admin_link:
+        lines.append(f"Detalle y gestion: {admin_link}")
+    lines.append("Sorty")
+    return "\n".join(lines)
+
+
+def kapso_send_text(phone_number_id: str, api_key: str, to_contact: str, body: str) -> dict:
+    base_url = (os.getenv("KAPSO_BASE_URL") or "https://api.kapso.ai/meta/whatsapp/v24.0").rstrip("/")
+    url = f"{base_url}/{phone_number_id}/messages"
+    payload = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": phone_to_wa_id(to_contact),
+        "type": "text",
+        "text": {"body": body},
+    }
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=data,
+        method="POST",
+        headers={"Content-Type": "application/json", "X-API-Key": api_key},
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=30) as response:
+            raw = response.read().decode("utf-8")
+            return json.loads(raw) if raw else {}
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="ignore")
+        raise AppError(f"Kapso rechazo el envio ({exc.code}): {detail[:200]}") from exc
+    except urllib.error.URLError as exc:
+        raise AppError("No se pudo conectar con Kapso.") from exc
+
+
 def dispatch_emails(
     participants: List[dict],
     assignments: Dict[str, str],
@@ -373,7 +507,8 @@ def dispatch_emails(
             print("\n" + "-" * 60)
             print(f"To: {msg['To']}")
             print(f"Subject: {msg['Subject']}")
-            print(msg.get_content())
+            plain = msg.get_body(preferencelist=("plain",))
+            print(plain.get_content() if plain else msg.as_string())
         return {"mode": mode, "sent": False, "emails": len(messages)}
 
     if mode != "smtp":
@@ -395,6 +530,61 @@ def dispatch_emails(
             server.send_message(msg)
 
         return {"mode": mode, "sent": True, "emails": len(messages)}
+
+
+def dispatch_whatsapp_messages(
+    participants: List[dict],
+    assignments: Dict[str, str],
+    meta: dict,
+    exclusions: List[Tuple[str, str]],
+    mode_override: Optional[str] = None,
+    admin_link: Optional[str] = None,
+) -> Dict[str, object]:
+    mode = (mode_override or os.getenv("WHATSAPP_MODE", "kapso")).lower()
+    admin = next(p for p in participants if p["is_admin"])
+    by_email = {p["email"]: p for p in participants}
+
+    outbound: List[Tuple[str, str, str]] = []
+    for giver in participants:
+        receiver = by_email[assignments[giver["email"]]]
+        participant_text = build_participant_whatsapp_text(
+            giver=giver,
+            receiver=receiver,
+            meta=meta,
+            admin_contact=admin["name"],
+        )
+        outbound.append((giver["email"], giver["name"], participant_text))
+
+    admin_text = build_admin_whatsapp_text(
+        admin_name=admin["name"],
+        code=meta.get("code"),
+        admin_link=admin_link,
+    )
+    outbound.append((admin["email"], admin["name"], admin_text))
+
+    if mode == "console":
+        for to_contact, to_name, text in outbound:
+            print("\n" + "-" * 60)
+            print(f"To: {to_name} <{to_contact}>")
+            print(text)
+        return {"mode": mode, "sent": False, "emails": len(outbound)}
+
+    if mode != "kapso":
+        raise AppError("WHATSAPP_MODE desconocido: usa kapso o console.")
+
+    api_key = (os.getenv("KAPSO_API_KEY") or "").strip()
+    phone_number_id = (os.getenv("KAPSO_PHONE_NUMBER_ID") or DEFAULT_KAPSO_PHONE_NUMBER_ID).strip()
+    if not api_key:
+        raise AppError("Falta KAPSO_API_KEY para enviar por WhatsApp.")
+    if not phone_number_id:
+        raise AppError("Falta KAPSO_PHONE_NUMBER_ID para enviar por WhatsApp.")
+
+    sent_count = 0
+    for to_contact, _, text in outbound:
+        kapso_send_text(phone_number_id=phone_number_id, api_key=api_key, to_contact=to_contact, body=text)
+        sent_count += 1
+
+    return {"mode": mode, "sent": True, "emails": sent_count}
 
 
 def send_simple_email(
@@ -421,7 +611,8 @@ def send_simple_email(
         print("\n" + "-" * 60)
         print(f"To: {msg['To']}")
         print(f"Subject: {msg['Subject']}")
-        print(msg.get_content())
+        plain = msg.get_body(preferencelist=("plain",))
+        print(plain.get_content() if plain else msg.as_string())
         return {"mode": mode, "sent": False, "emails": 1}
 
     if mode != "smtp":
@@ -444,6 +635,58 @@ def send_simple_email(
     return {"mode": mode, "sent": True, "emails": 1}
 
 
+def send_simple_whatsapp(to_contact: str, text_body: str, mode_override: Optional[str] = None) -> Dict[str, object]:
+    mode = (mode_override or os.getenv("WHATSAPP_MODE", "kapso")).lower()
+
+    if mode == "console":
+        print("\n" + "-" * 60)
+        print(f"To: {to_contact}")
+        print(text_body)
+        return {"mode": mode, "sent": False, "emails": 1}
+
+    if mode != "kapso":
+        raise AppError("WHATSAPP_MODE desconocido: usa kapso o console.")
+
+    api_key = (os.getenv("KAPSO_API_KEY") or "").strip()
+    phone_number_id = (os.getenv("KAPSO_PHONE_NUMBER_ID") or DEFAULT_KAPSO_PHONE_NUMBER_ID).strip()
+    if not api_key:
+        raise AppError("Falta KAPSO_API_KEY para enviar por WhatsApp.")
+    if not phone_number_id:
+        raise AppError("Falta KAPSO_PHONE_NUMBER_ID para enviar por WhatsApp.")
+
+    kapso_send_text(phone_number_id=phone_number_id, api_key=api_key, to_contact=to_contact, body=text_body)
+    return {"mode": mode, "sent": True, "emails": 1}
+
+
+def dispatch_notifications(
+    participants: List[dict],
+    assignments: Dict[str, str],
+    meta: dict,
+    exclusions: List[Tuple[str, str]],
+    channel: str,
+    mode_override: Optional[str] = None,
+    admin_link: Optional[str] = None,
+) -> Dict[str, object]:
+    if channel == "whatsapp":
+        return dispatch_whatsapp_messages(
+            participants=participants,
+            assignments=assignments,
+            meta=meta,
+            exclusions=exclusions,
+            mode_override=mode_override,
+            admin_link=admin_link,
+        )
+
+    return dispatch_emails(
+        participants=participants,
+        assignments=assignments,
+        meta=meta,
+        exclusions=exclusions,
+        mode_override=mode_override,
+        admin_link=admin_link,
+    )
+
+
 def build_sorteo_link(sorteo: Sorteo) -> str:
     """Return an absolute link to the stored draw (sorteo)."""
     base = (os.getenv("PUBLIC_APP_URL") or "").strip().rstrip("/")
@@ -457,6 +700,7 @@ def build_sorteo_link(sorteo: Sorteo) -> str:
 
 def load_draw_data(code: str) -> Tuple[Sorteo, dict]:
     """Fetch draw data (participants, exclusions, assignments) by code or UUID."""
+    ensure_database_schema()
     query = Sorteo.query.options(
         joinedload(Sorteo.participantes).joinedload(Participante.exclusiones),
         joinedload(Sorteo.asignaciones).joinedload(Asignacion.giver),
@@ -472,10 +716,17 @@ def load_draw_data(code: str) -> Tuple[Sorteo, dict]:
     if not sorteo:
         raise AppError("Sorteo no encontrado.")
 
+    channel = infer_channel_from_contact(sorteo.email_admin)
     participants = []
     for p in sorteo.participantes:
         participants.append(
-            {"id": p.id, "name": p.nombre, "email": p.email, "is_admin": p.email.lower() == sorteo.email_admin.lower()}
+            {
+                "id": p.id,
+                "name": p.nombre,
+                "email": p.email,
+                "contact": p.email,
+                "is_admin": p.email.lower() == sorteo.email_admin.lower(),
+            }
         )
 
     exclusions: List[Tuple[str, str]] = []
@@ -491,13 +742,17 @@ def load_draw_data(code: str) -> Tuple[Sorteo, dict]:
         "id": str(sorteo.public_id),
         "code": sorteo.code,
         "name": sorteo.nombre,
+        "channel": channel,
         "email_admin": sorteo.email_admin,
+        "admin_contact": sorteo.email_admin,
         "participants": participants,
         "exclusions": exclusions,
         "assignments": [
             {
                 "giver_email": giver,
                 "receiver_email": receiver,
+                "giver_contact": giver,
+                "receiver_contact": receiver,
                 "giver_name": next((p["name"] for p in participants if p["email"] == giver), giver),
                 "receiver_name": next((p["name"] for p in participants if p["email"] == receiver), receiver),
             }
@@ -507,30 +762,31 @@ def load_draw_data(code: str) -> Tuple[Sorteo, dict]:
     return sorteo, payload
 
 
-def update_participant_email(sorteo: Sorteo, participant_id: int, new_email: str, notify_previous: bool) -> dict:
-    new_email_norm = normalize_email(new_email)
-    if "@" not in new_email_norm or "." not in new_email_norm:
-        raise AppError("Email invalido.")
+def update_participant_contact(sorteo: Sorteo, participant_id: int, new_contact: str, notify_previous: bool) -> dict:
+    draw_channel = infer_channel_from_contact(sorteo.email_admin)
+    new_contact_norm = normalize_contact(new_contact, draw_channel)
 
     participant = next((p for p in sorteo.participantes if p.id == participant_id), None)
     if not participant:
         raise AppError("Participante no encontrado en este sorteo.")
 
-    if any(p.email.lower() == new_email_norm and p.id != participant.id for p in sorteo.participantes):
-        raise AppError("Ya existe un participante con ese email.")
+    if any(p.email.lower() == new_contact_norm.lower() and p.id != participant.id for p in sorteo.participantes):
+        if draw_channel == "email":
+            raise AppError("Ya existe un participante con ese email.")
+        raise AppError("Ya existe un participante con ese numero.")
 
-    old_email = participant.email
-    participant.email = new_email_norm
+    old_contact = participant.email
+    participant.email = new_contact_norm
 
-    admin_email_updated = False
-    if sorteo.email_admin.lower() == old_email.lower():
-        sorteo.email_admin = new_email_norm
-        admin_email_updated = True
+    admin_contact_updated = False
+    if sorteo.email_admin.lower() == old_contact.lower():
+        sorteo.email_admin = new_contact_norm
+        admin_contact_updated = True
 
     db.session.commit()
 
     notified = False
-    if notify_previous and old_email.lower() != new_email_norm.lower():
+    if notify_previous and old_contact.lower() != new_contact_norm.lower() and draw_channel == "email":
         admin_contact = f"{sorteo.nombre} ({sorteo.email_admin})"
         subject = "Correccion de correo - Sorty"
         text_body = (
@@ -548,16 +804,18 @@ def update_participant_email(sorteo: Sorteo, participant_id: int, new_email: str
             f"<p style='margin:14px 0; font-size:14px; color:#4b5563;'>Si necesitas algo, contacta a {admin_contact}.</p>"
             f"</div></body></html>"
         )
-        send_simple_email(old_email, participant.nombre, subject, text_body, html_body)
+        send_simple_email(old_contact, participant.nombre, subject, text_body, html_body)
         notified = True
 
     return {
         "id": participant.id,
         "name": participant.nombre,
         "email": participant.email,
+        "contact": participant.email,
         "is_admin": participant.email.lower() == sorteo.email_admin.lower(),
         "notified_previous": notified,
-        "admin_email_updated": admin_email_updated,
+        "admin_email_updated": admin_contact_updated,
+        "admin_contact_updated": admin_contact_updated,
     }
 
 
@@ -605,8 +863,10 @@ def assignment_for_client(assignments: Dict[str, str], participants: List[dict])
             {
                 "giver_name": giver["name"],
                 "giver_email": giver["email"],
+                "giver_contact": giver["email"],
                 "receiver_name": receiver["name"],
                 "receiver_email": receiver["email"],
+                "receiver_contact": receiver["email"],
             }
         )
     return rendered
@@ -617,7 +877,7 @@ def landing():
     base = (os.getenv("PUBLIC_APP_URL") or request.url_root or "").strip().rstrip("/")
     if not base:
         base = "https://sorty-neon.vercel.app"
-    if base.startswith("http://"):
+    if base.startswith("http://") and "localhost" not in base and "127.0.0.1" not in base:
         base = "https://" + base[len("http://") :]
     return render_template(
         "landing.html",
@@ -630,7 +890,8 @@ def landing():
 @app.route("/app", methods=["GET"])
 def index():
     email_mode = os.getenv("EMAIL_MODE", "smtp").lower()
-    return render_template("index.html", email_mode=email_mode)
+    whatsapp_mode = os.getenv("WHATSAPP_MODE", "kapso").lower()
+    return render_template("index.html", email_mode=email_mode, whatsapp_mode=whatsapp_mode)
 
 
 @app.route("/preview/email/participant", methods=["GET"])
@@ -708,19 +969,25 @@ def sorteo_view(code: str):
 @app.route("/api/draw", methods=["POST"])  # alias antiguo
 def api_draw():
     payload = request.get_json(force=True) or {}
-    send_emails = bool(payload.get("send"))
+    send_notifications = bool(payload.get("send"))
     meta = payload.get("meta") or {}
     mode_override = (payload.get("mode") or "").strip().lower() or None
+    channel = normalize_channel(payload.get("channel"))
 
     try:
-        participants = validate_participants(payload.get("participants") or [])
-        exclusions = validate_exclusions(payload.get("exclusions") or [], {p["email"] for p in participants})
+        ensure_database_schema()
+        participants = validate_participants(payload.get("participants") or [], channel)
+        exclusions = validate_exclusions(payload.get("exclusions") or [], {p["email"] for p in participants}, channel)
         assignments, err = find_assignments(participants, exclusions)
         if err or not assignments:
             raise AppError(err or "No se pudo generar un sorteo valido.")
 
-        if mode_override and mode_override not in {"console", "smtp"}:
-            raise AppError("Modo de email invalido. Usa console o smtp.")
+        if mode_override:
+            allowed_modes = {"console", "smtp"} if channel == "email" else {"console", "kapso"}
+            if mode_override not in allowed_modes:
+                if channel == "email":
+                    raise AppError("Modo de email invalido. Usa console o smtp.")
+                raise AppError("Modo de WhatsApp invalido. Usa console o kapso.")
 
         admin = next(p for p in participants if p["is_admin"])
         meta_clean = {
@@ -740,18 +1007,33 @@ def api_draw():
             db.session.rollback()
             raise
 
-        email_status = None
-        if send_emails:
-            email_status = dispatch_emails(
-                participants, assignments, meta_clean, exclusions, mode_override, admin_link=draw_link
+        delivery_status = None
+        if send_notifications:
+            delivery_status = dispatch_notifications(
+                participants=participants,
+                assignments=assignments,
+                meta=meta_clean,
+                exclusions=exclusions,
+                channel=channel,
+                mode_override=mode_override,
+                admin_link=draw_link,
             )
 
+        default_mode = os.getenv("EMAIL_MODE", "smtp") if channel == "email" else os.getenv("WHATSAPP_MODE", "kapso")
         response = {
             "ok": True,
-            "message": "Correos enviados." if send_emails else "Simulacion lista. No se enviaron correos.",
+            "message": (
+                "Correos enviados."
+                if send_notifications and channel == "email"
+                else "Mensajes de WhatsApp enviados."
+                if send_notifications
+                else "Simulacion lista. No se enviaron mensajes."
+            ),
             "assignment": assignment_for_client(assignments, participants),
-            "email_status": email_status,
-            "mode": mode_override or os.getenv("EMAIL_MODE", "smtp"),
+            "email_status": delivery_status,
+            "delivery_status": delivery_status,
+            "channel": channel,
+            "mode": mode_override or default_mode,
             "draw_id": str(sorteo_record.public_id) if sorteo_record else None,
             "draw_code": sorteo_record.code if sorteo_record else None,
             "draw_link": draw_link,
@@ -784,6 +1066,7 @@ def api_draw_resend(code: str):
     mode_override = (payload.get("mode") or "").strip().lower() or None
     try:
         sorteo, data = load_draw_data(code)
+        channel = normalize_channel(data.get("channel") or infer_channel_from_contact(data.get("email_admin") or ""))
         participants = data["participants"]
         exclusions = data["exclusions"]
         assignments = {item["giver_email"]: item["receiver_email"] for item in data["assignments"]}
@@ -797,16 +1080,27 @@ def api_draw_resend(code: str):
             "deadline": "",
             "note": "",
             "admin": admin,
+            "code": data.get("code"),
         }
-        email_status = dispatch_emails(
-            participants,
-            assignments,
-            meta_clean,
-            exclusions,
-            mode_override,
+        delivery_status = dispatch_notifications(
+            participants=participants,
+            assignments=assignments,
+            meta=meta_clean,
+            exclusions=exclusions,
+            channel=channel,
+            mode_override=mode_override,
             admin_link=build_sorteo_link(sorteo),
         )
-        return jsonify({"ok": True, "message": "Correos reenviados.", "email_status": email_status})
+        message = "Correos reenviados." if channel == "email" else "Mensajes de WhatsApp reenviados."
+        return jsonify(
+            {
+                "ok": True,
+                "message": message,
+                "email_status": delivery_status,
+                "delivery_status": delivery_status,
+                "channel": channel,
+            }
+        )
     except AppError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
     except Exception:
@@ -815,13 +1109,15 @@ def api_draw_resend(code: str):
 
 @app.route("/api/sorteo/<code>/participant/<int:participant_id>/email", methods=["PATCH"])
 @app.route("/api/draw/<code>/participant/<int:participant_id>/email", methods=["PATCH"])  # alias antiguo
-def api_draw_update_email(code: str, participant_id: int):
+@app.route("/api/sorteo/<code>/participant/<int:participant_id>/contact", methods=["PATCH"])
+@app.route("/api/draw/<code>/participant/<int:participant_id>/contact", methods=["PATCH"])  # alias antiguo
+def api_draw_update_contact(code: str, participant_id: int):
     payload = request.get_json(force=True) or {}
-    new_email = (payload.get("email") or "").strip()
+    new_contact = (payload.get("contact") or payload.get("email") or "").strip()
     notify_previous = bool(payload.get("notify_previous"))
     try:
         sorteo, _ = load_draw_data(code)
-        updated = update_participant_email(sorteo, participant_id, new_email, notify_previous)
+        updated = update_participant_contact(sorteo, participant_id, new_contact, notify_previous)
         return jsonify({"ok": True, "participant": updated})
     except AppError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400

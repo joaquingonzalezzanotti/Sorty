@@ -1,9 +1,9 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="es">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sorty - Amigo Invisible </title>
+  <title>Sorty - Amigo Invisible</title>
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='sorty_logo.png') }}">
   <link rel="shortcut icon" type="image/png" href="{{ url_for('static', filename='sorty_logo.png') }}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -17,7 +17,8 @@
       <img src="{{ url_for('static', filename='sorty_logo.png') }}" alt="Sorty logo" class="brand-logo">
       <div>
         <div class="brand-name">Sorty</div>
-        <div class="brand-tag">Tu amigo invisible de confianza</div>      </div>
+        <div class="brand-tag">Tu amigo invisible de confianza</div>
+      </div>
     </a>
     <div class="top-links">
       <a href="#participants" class="nav-link">Participantes</a>
@@ -26,8 +27,8 @@
       <button id="theme-toggle" class="theme-toggle" aria-label="Cambiar tema">
         <span class="theme-toggle-track">
           <span class="theme-toggle-thumb">
-            <span class="theme-toggle-icon sun" aria-hidden="true">☀</span>
-            <span class="theme-toggle-icon moon" aria-hidden="true">☾</span>
+            <span class="theme-toggle-icon sun" aria-hidden="true">&#9728;</span>
+            <span class="theme-toggle-icon moon" aria-hidden="true">&#9790;</span>
           </span>
         </span>
       </button>
@@ -42,13 +43,13 @@
           <p class="lede">Carga participantes, define reglas y envia resultados en un flujo simple.</p>
           <div class="badges">
             <span class="badge soft">Administrador unico</span>
-            <span class="badge soft">Validacion de emails</span>
+            <span class="badge soft">Validacion de contacto</span>
             <span class="badge soft">Envio directo</span>
           </div>
         </div>
         <div class="hero-visual">
           <div class="logo-glow">
-            <img src="{{ url_for('static', filename='sorty_logo.png') }}" alt="Sorty" />
+            <img src="{{ url_for('static', filename='sorty_logo.png') }}" alt="Sorty">
           </div>
         </div>
       </div>
@@ -58,17 +59,30 @@
       <div class="section-head">
         <div>
           <p class="eyebrow">1. Participantes</p>
-          <h2>Agrega nombre, email y marca un Administrador</h2>
+          <h2 id="participants-title">Agrega nombre, email y marca un Administrador</h2>
         </div>
         <div class="hint">Administrador recibe el registro completo.</div>
       </div>
+
+      <div class="channel-selector" id="channel-selector">
+        <span class="channel-label">Canal del sorteo</span>
+        <label class="channel-option">
+          <input type="radio" name="draw-channel" value="email" checked>
+          <span>Email</span>
+        </label>
+        <label class="channel-option">
+          <input type="radio" name="draw-channel" value="whatsapp">
+          <span>WhatsApp</span>
+        </label>
+      </div>
+
       <form id="participant-form" class="form-grid">
         <label>
           <span>Nombre</span>
           <input type="text" id="name" placeholder="Ej: Sofia Perez" required>
         </label>
         <label>
-          <span>Email</span>
+          <span id="contact-label">Email</span>
           <input type="email" id="email" placeholder="ejemplo@mail.com" required>
         </label>
         <label class="check" id="admin-wrapper">
@@ -89,7 +103,7 @@
             <tr>
               <th>Administrador</th>
               <th>Nombre</th>
-              <th>Email</th>
+              <th id="participants-contact-header">Email</th>
               <th></th>
             </tr>
           </thead>
@@ -136,7 +150,6 @@
           <p class="eyebrow">3. Detalles del sorteo</p>
           <h2>Comparte presupuesto, fecha y nota grupal</h2>
         </div>
-        <!-- <div class="hint">Presupuesto opcional. Nota obligatoria. Fecha limite opcional pero recomendamos completarla.</div> -->
       </div>
       <div class="form-grid compact">
         <label>
@@ -187,11 +200,12 @@
           <path d="M20 6L9 17l-5-5" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"></path>
         </svg>
       </div>
-      <div id="send-overlay-text" class="send-overlay-text">Enviando correos...</div>
+      <div id="send-overlay-text" class="send-overlay-text">Enviando...</div>
       <div id="send-overlay-sub" class="send-overlay-sub">Esto puede tardar algunos segundos.</div>
       <button id="send-overlay-ok" class="button primary hidden" type="button">OK</button>
     </div>
   </div>
+
   <div id="admin-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="admin-modal-title">
     <div class="modal-card">
       <h3 id="admin-modal-title">Seleccionar Administrador</h3>
@@ -202,8 +216,10 @@
       </div>
     </div>
   </div>
+
   <script>
     window.initialEmailMode = "{{ email_mode }}";
+    window.initialWhatsappMode = "{{ whatsapp_mode }}";
   </script>
   <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
