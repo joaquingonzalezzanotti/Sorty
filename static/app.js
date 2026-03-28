@@ -151,6 +151,20 @@ function showToast(message, type = "info") {
   }, 2600);
 }
 
+function formatApiErrorMessage(data, fallback = "Error en el sorteo.") {
+  const message = (data?.error || "").trim();
+  const code = (data?.error_code || "").trim();
+  const hint = (data?.error_hint || "").trim();
+  const source = (data?.error_source || "").trim();
+  const base = message || fallback;
+  const extras = [];
+  if (code) extras.push(code);
+  if (source) extras.push(source);
+  const meta = extras.length ? ` (${extras.join(" | ")})` : "";
+  const hintText = hint ? ` Sugerencia: ${hint}` : "";
+  return `${base}${meta}${hintText}`;
+}
+
 function setSending(active, { message = "", sub = "", status = "sending" } = {}) {
   state.isSending = active;
   if (sendSpinner && status === "sending") {
@@ -675,7 +689,10 @@ async function submitDraw(send) {
       throw new Error("Respuesta del servidor invalida. Intenta nuevamente.");
     }
 
-    if (!res.ok || !data?.ok) throw new Error(data?.error || "Error en el sorteo.");
+    if (!res.ok || !data?.ok) {
+      console.error("Error API /api/sorteo", { status: res.status, data });
+      throw new Error(formatApiErrorMessage(data, "Error en el sorteo."));
+    }
 
     if (send) {
       const count = data.delivery_status?.emails || data.email_status?.emails;
