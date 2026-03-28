@@ -56,6 +56,113 @@ _schema_initialized = False
 class AppError(Exception):
     """Errors that should be surfaced to the client with a friendly message."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: Optional[str] = None,
+        hint: Optional[str] = None,
+        source: Optional[str] = None,
+    ):
+        super().__init__(message)
+        self.message = message
+        self.code = code
+        self.hint = hint
+        self.source = source
+
+    def to_payload(self) -> dict:
+        payload = {"ok": False, "error": self.message}
+        if self.code:
+            payload["error_code"] = self.code
+        if self.hint:
+            payload["error_hint"] = self.hint
+        if self.source:
+            payload["error_source"] = self.source
+        return payload
+
+
+def error_payload_from_exception(exc: Exception, default_message: str = "Error inesperado en el servidor.") -> dict:
+    if isinstance(exc, AppError):
+        return exc.to_payload()
+    return {"ok": False, "error": default_message}
+
+
+def parse_kapso_error_detail(detail: str) -> dict:
+    parsed: dict = {}
+    try:
+        parsed = json.loads(detail or "{}")
+    except Exception:
+        parsed = {}
+
+    root = parsed if isinstance(parsed, dict) else {}
+    err = root.get("error") if isinstance(root.get("error"), dict) else root
+    return {
+        "message": str(err.get("message") or "").strip(),
+        "type": str(err.get("type") or "").strip(),
+        "code": err.get("code"),
+        "subcode": err.get("error_subcode"),
+        "user_title": str(err.get("error_user_title") or "").strip(),
+        "user_msg": str(err.get("error_user_msg") or "").strip(),
+        "fbtrace_id": str(err.get("fbtrace_id") or "").strip(),
+    }
+
+
+def kapso_error_hint(status_code: int, info: dict) -> str:
+    raw = " ".join(
+        [
+            str(info.get("message") or ""),
+            str(info.get("user_msg") or ""),
+            str(info.get("type") or ""),
+        ]
+    ).lower()
+    code = str(info.get("code") or "")
+
+    if code == "1010":
+        return (
+            "Revisa template/idioma y cantidad de parametros. "
+            "Tambien valida que KAPSO_API_KEY y KAPSO_PHONE_NUMBER_ID pertenezcan al mismo proyecto LIVE."
+        )
+    if code == "100" or "invalid parameter" in raw or "param" in raw:
+        return "Hay un parametro invalido. Revisa nombre del template, idioma y orden/cantidad de variables."
+    if "template" in raw and ("not found" in raw or "does not exist" in raw):
+        return "El template no existe para ese numero o workspace. Verifica nombre exacto e idioma aprobado."
+    if "language" in raw:
+        return "El idioma del template no coincide con uno aprobado. Usa el locale exacto (ej: es_AR, es_MX)."
+    if "permission" in raw or "unauthorized" in raw or status_code in {401, 403}:
+        return "Verifica credenciales, permisos del numero y estado del Business/WhatsApp account."
+    if "quality" in raw or "limit" in raw or "rate" in raw:
+        return "El numero puede estar limitado por calidad o tier. Revisa Messaging limits y estado del display name."
+    return "Revisa logs de Kapso/Meta para el request fallido (template, idioma, parametros y numero destino)."
+
+
+def build_kapso_app_error(status_code: int, detail: str, payload: dict) -> AppError:
+    info = parse_kapso_error_detail(detail)
+    code = info.get("code")
+    subcode = info.get("subcode")
+    reason = info.get("user_msg") or info.get("message") or (detail or "").strip()[:200] or "Error desconocido."
+
+    context = []
+    if payload.get("type") == "template":
+        template = payload.get("template") or {}
+        template_name = template.get("name")
+        language_code = (template.get("language") or {}).get("code")
+        if template_name:
+            context.append(f"template={template_name}")
+        if language_code:
+            context.append(f"lang={language_code}")
+    to_contact = payload.get("to")
+    if to_contact:
+        context.append(f"to={to_contact}")
+
+    code_text = f", code {code}" if code is not None else ""
+    subcode_text = f", subcode {subcode}" if subcode is not None else ""
+    context_text = f" ({', '.join(context)})" if context else ""
+
+    message = f"Kapso rechazo el envio de WhatsApp (HTTP {status_code}{code_text}{subcode_text}). {reason}{context_text}"
+    hint = kapso_error_hint(status_code, info)
+    error_code = f"KAPSO_{code}" if code is not None else f"KAPSO_HTTP_{status_code}"
+    return AppError(message, code=error_code, hint=hint, source="kapso")
+
 
 DRAW_CHANNELS = {"email", "whatsapp"}
 WHATSAPP_E164_RE = re.compile(r"^\+[1-9]\d{7,14}$")
@@ -646,9 +753,12 @@ def kapso_post_message(phone_number_id: str, api_key: str, payload: dict) -> dic
             return json.loads(raw) if raw else {}
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="ignore")
-        raise AppError(f"Kapso rechazo el envio ({exc.code}): {detail[:200]}") from exc
+        raise build_kapso_app_error(status_code=exc.code, detail=detail, payload=payload) from exc
     except urllib.error.URLError as exc:
-        raise AppError("No se pudo conectar con Kapso.") from exc
+        reason = str(getattr(exc, "reason", "") or "").strip()
+        hint = "Verifica conectividad de red y la URL base de Kapso (KAPSO_BASE_URL)."
+        message = f"No se pudo conectar con Kapso. {reason}" if reason else "No se pudo conectar con Kapso."
+        raise AppError(message, code="KAPSO_NETWORK", hint=hint, source="kapso") from exc
 
 
 def kapso_send_text(phone_number_id: str, api_key: str, to_contact: str, body: str) -> dict:
@@ -994,14 +1104,22 @@ def dispatch_whatsapp_messages(
                 "receiver_contact": template_value(receiver.get("email")),
             }
             body_parameters = build_template_body_parameters(participant_body_order, participant_context)
-            kapso_send_template(
-                phone_number_id=phone_number_id,
-                api_key=api_key,
-                to_contact=giver["email"],
-                template_name=participant_template_name,
-                language_code=participant_language,
-                body_parameters=body_parameters,
-            )
+            try:
+                kapso_send_template(
+                    phone_number_id=phone_number_id,
+                    api_key=api_key,
+                    to_contact=giver["email"],
+                    template_name=participant_template_name,
+                    language_code=participant_language,
+                    body_parameters=body_parameters,
+                )
+            except AppError as exc:
+                raise AppError(
+                    f"Fallo envio WhatsApp a participante '{giver['name']}' ({giver['email']}). {exc.message}",
+                    code=exc.code,
+                    hint=exc.hint,
+                    source=exc.source,
+                ) from exc
             sent_count += 1
 
         admin_context = {
@@ -1020,22 +1138,38 @@ def dispatch_whatsapp_messages(
             else:
                 admin_button_parameter = template_value(os.getenv("KAPSO_TEMPLATE_ADMIN_BUTTON_VALUE"))
 
-        kapso_send_template(
-            phone_number_id=phone_number_id,
-            api_key=api_key,
-            to_contact=admin["email"],
-            template_name=admin_template_name,
-            language_code=admin_language,
-            body_parameters=admin_body_parameters,
-            button_url_parameter=admin_button_parameter,
-            button_index=admin_button_index or "0",
-        )
+        try:
+            kapso_send_template(
+                phone_number_id=phone_number_id,
+                api_key=api_key,
+                to_contact=admin["email"],
+                template_name=admin_template_name,
+                language_code=admin_language,
+                body_parameters=admin_body_parameters,
+                button_url_parameter=admin_button_parameter,
+                button_index=admin_button_index or "0",
+            )
+        except AppError as exc:
+            raise AppError(
+                f"Fallo envio WhatsApp al Administrador '{admin['name']}' ({admin['email']}). {exc.message}",
+                code=exc.code,
+                hint=exc.hint,
+                source=exc.source,
+            ) from exc
         sent_count += 1
         return {"mode": mode, "sent": True, "emails": sent_count, "transport": "kapso-template"}
 
     sent_count = 0
-    for to_contact, _, text in outbound:
-        kapso_send_text(phone_number_id=phone_number_id, api_key=api_key, to_contact=to_contact, body=text)
+    for to_contact, to_name, text in outbound:
+        try:
+            kapso_send_text(phone_number_id=phone_number_id, api_key=api_key, to_contact=to_contact, body=text)
+        except AppError as exc:
+            raise AppError(
+                f"Fallo envio WhatsApp a '{to_name}' ({to_contact}). {exc.message}",
+                code=exc.code,
+                hint=exc.hint,
+                source=exc.source,
+            ) from exc
         sent_count += 1
 
     return {"mode": mode, "sent": True, "emails": sent_count, "transport": "kapso-text"}
@@ -1540,9 +1674,9 @@ def api_draw():
         return jsonify(response)
 
     except AppError as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 400
+        return jsonify(error_payload_from_exception(exc)), 400
     except Exception as exc:  # pragma: no cover - safety net
-        return jsonify({"ok": False, "error": "Error inesperado en el servidor."}), 500
+        return jsonify(error_payload_from_exception(exc)), 500
 
 
 @app.route("/api/sorteo/<code>", methods=["GET"])
@@ -1552,9 +1686,9 @@ def api_draw_get(code: str):
         _, data = load_draw_data(code)
         return jsonify({"ok": True, "draw": data})
     except AppError as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 404
-    except Exception:
-        return jsonify({"ok": False, "error": "Error inesperado en el servidor."}), 500
+        return jsonify(error_payload_from_exception(exc)), 404
+    except Exception as exc:
+        return jsonify(error_payload_from_exception(exc)), 500
 
 
 @app.route("/api/sorteo/<code>/resend", methods=["POST"])
@@ -1609,9 +1743,9 @@ def api_draw_resend(code: str):
             }
         )
     except AppError as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 400
-    except Exception:
-        return jsonify({"ok": False, "error": "Error inesperado en el servidor."}), 500
+        return jsonify(error_payload_from_exception(exc)), 400
+    except Exception as exc:
+        return jsonify(error_payload_from_exception(exc)), 500
 
 
 @app.route("/api/sorteo/<code>/participant/<int:participant_id>/resend", methods=["POST"])
@@ -1660,9 +1794,9 @@ def api_draw_resend_participant(code: str, participant_id: int):
             schedule_bounce_polls(sorteo.id)
         return jsonify({"ok": True, "message": "Correo reenviado.", "email_status": email_status})
     except AppError as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 400
-    except Exception:
-        return jsonify({"ok": False, "error": "Error inesperado en el servidor."}), 500
+        return jsonify(error_payload_from_exception(exc)), 400
+    except Exception as exc:
+        return jsonify(error_payload_from_exception(exc)), 500
 
 
 @app.route("/api/sorteo/<code>/participant/<int:participant_id>/email", methods=["PATCH"])
@@ -1678,9 +1812,9 @@ def api_draw_update_contact(code: str, participant_id: int):
         updated = update_participant_contact(sorteo, participant_id, new_contact, notify_previous)
         return jsonify({"ok": True, "participant": updated})
     except AppError as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 400
-    except Exception:
-        return jsonify({"ok": False, "error": "Error inesperado en el servidor."}), 500
+        return jsonify(error_payload_from_exception(exc)), 400
+    except Exception as exc:
+        return jsonify(error_payload_from_exception(exc)), 500
 
 
 if __name__ == "__main__":
