@@ -88,22 +88,59 @@ def error_payload_from_exception(exc: Exception, default_message: str = "Error i
 
 
 def parse_kapso_error_detail(detail: str) -> dict:
+    raw_detail = (detail or "").strip()
     parsed: dict = {}
     try:
-        parsed = json.loads(detail or "{}")
+        parsed = json.loads(raw_detail or "{}")
     except Exception:
         parsed = {}
 
     root = parsed if isinstance(parsed, dict) else {}
     err = root.get("error") if isinstance(root.get("error"), dict) else root
+
+    def from_hash_text_text(field: str) -> str:
+        # Some providers proxy Meta errors as Ruby-hash-like strings: "key" => "value".
+        match = re.search(rf'"{re.escape(field)}"\s*(?::|=>)\s*"([^"]*)"', raw_detail)
+        return match.group(1).strip() if match else ""
+
+    def from_hash_text_int(field: str):
+        match = re.search(rf'"{re.escape(field)}"\s*(?::|=>)\s*(\d+)', raw_detail)
+        if not match:
+            return None
+        try:
+            return int(match.group(1))
+        except Exception:
+            return match.group(1)
+
+    message = str(err.get("message") or "").strip() or from_hash_text_text("message")
+    user_msg = str(err.get("error_user_msg") or "").strip() or from_hash_text_text("error_user_msg")
+    user_title = str(err.get("error_user_title") or "").strip() or from_hash_text_text("error_user_title")
+    error_type = str(err.get("type") or "").strip() or from_hash_text_text("type")
+    fbtrace_id = str(err.get("fbtrace_id") or "").strip() or from_hash_text_text("fbtrace_id")
+    code = err.get("code")
+    subcode = err.get("error_subcode")
+    if code is None:
+        code = from_hash_text_int("code")
+    if subcode is None:
+        subcode = from_hash_text_int("error_subcode")
+
+    if code is None:
+        code_match = re.search(r"\bcode\b[^0-9]{0,8}(\d{3,6})\b", raw_detail, flags=re.IGNORECASE)
+        if code_match:
+            try:
+                code = int(code_match.group(1))
+            except Exception:
+                code = code_match.group(1)
+
     return {
-        "message": str(err.get("message") or "").strip(),
-        "type": str(err.get("type") or "").strip(),
-        "code": err.get("code"),
-        "subcode": err.get("error_subcode"),
-        "user_title": str(err.get("error_user_title") or "").strip(),
-        "user_msg": str(err.get("error_user_msg") or "").strip(),
-        "fbtrace_id": str(err.get("fbtrace_id") or "").strip(),
+        "message": message or raw_detail[:240],
+        "type": error_type,
+        "code": code,
+        "subcode": subcode,
+        "user_title": user_title,
+        "user_msg": user_msg,
+        "fbtrace_id": fbtrace_id,
+        "raw": raw_detail[:500],
     }
 
 
@@ -113,6 +150,7 @@ def kapso_error_hint(status_code: int, info: dict) -> str:
             str(info.get("message") or ""),
             str(info.get("user_msg") or ""),
             str(info.get("type") or ""),
+            str(info.get("raw") or ""),
         ]
     ).lower()
     code = str(info.get("code") or "")
@@ -128,10 +166,12 @@ def kapso_error_hint(status_code: int, info: dict) -> str:
         return "El template no existe para ese numero o workspace. Verifica nombre exacto e idioma aprobado."
     if "language" in raw:
         return "El idioma del template no coincide con uno aprobado. Usa el locale exacto (ej: es_AR, es_MX)."
-    if "permission" in raw or "unauthorized" in raw or status_code in {401, 403}:
-        return "Verifica credenciales, permisos del numero y estado del Business/WhatsApp account."
     if "quality" in raw or "limit" in raw or "rate" in raw:
         return "El numero puede estar limitado por calidad o tier. Revisa Messaging limits y estado del display name."
+    if "permission" in raw or "unauthorized" in raw:
+        return "Verifica credenciales, permisos del numero y estado del Business/WhatsApp account."
+    if status_code in {401, 403}:
+        return "HTTP 401/403 desde Kapso. Revisa API key, phone_number_id y permisos del numero en el workspace."
     return "Revisa logs de Kapso/Meta para el request fallido (template, idioma, parametros y numero destino)."
 
 
