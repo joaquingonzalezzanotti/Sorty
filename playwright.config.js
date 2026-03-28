@@ -10,15 +10,13 @@ module.exports = defineConfig({
     trace: "retain-on-failure",
   },
   webServer: {
-    command: "flask --app app run --port 5000",
+    command: "python -c \"from app import app; app.run(host='127.0.0.1', port=5000)\"",
     url: "http://localhost:5000",
     reuseExistingServer: !process.env.CI,
     timeout: 120000,
     env: {
       EMAIL_MODE: "console",
-      FLASK_APP: "app",
-      FLASK_ENV: "development",
-      FLASK_RUN_PORT: "5000",
+      WHATSAPP_MODE: "console",
     },
   },
 });

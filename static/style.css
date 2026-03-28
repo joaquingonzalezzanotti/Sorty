@@ -420,6 +420,39 @@ h3 {
   font-size: 13px;
 }
 
+.channel-selector {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.channel-label {
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 600;
+  margin-right: 4px;
+}
+
+.channel-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: var(--ghost-bg);
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.channel-option input {
+  width: auto;
+  margin: 0;
+}
+
 .mobile-participants-label {
   display: none;
   font-weight: 700;
@@ -452,6 +485,10 @@ h3 {
 
   .mobile-participants-label {
     display: block;
+  }
+
+  .channel-selector {
+    width: 100%;
   }
 }
 
@@ -1348,6 +1385,33 @@ th {
   text-align: center;
 }
 
+.send-overlay-errors {
+  width: 100%;
+  background: var(--card-bg);
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: left;
+}
+
+.send-overlay-errors .error-title {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.send-overlay-errors ul {
+  margin: 6px 0 0;
+  padding-left: 16px;
+}
+
+.send-overlay-actions {
+  width: 100%;
+  display: grid;
+  gap: 8px;
+}
+
 #send-overlay-ok {
   width: 100%;
 }
@@ -1566,6 +1630,35 @@ th {
   border-radius: 999px;
   font-size: 12px;
   margin-left: 8px;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+
+.status-sent {
+  background: #ecfdf5;
+  color: #047857;
+  border-color: #a7f3d0;
+}
+
+.status-error {
+  background: #fef2f2;
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+
+.status-muted {
+  background: #f8fafc;
+  color: #64748b;
+  border-color: #e2e8f0;
 }
 
 .participant-list {

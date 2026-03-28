@@ -4,7 +4,7 @@ test.describe("Participantes - escritorio", () => {
   test.use({ viewport: { width: 1280, height: 800 } });
 
   test("agregar, editar y eliminar mantiene un solo administrador", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/app");
     await expect(page.getByText("Agrega nombre, email y marca un Administrador")).toBeVisible();
 
     // Primer participante como administrador.
@@ -46,7 +46,7 @@ test.describe("Participantes - mobile", () => {
   test.use({ viewport: { width: 430, height: 900 } });
 
   test("muestra iconos de editar y eliminar en modo mobile", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/app");
     await expect(page.getByText("Agrega nombre, email y marca un Administrador")).toBeVisible();
 
     const addBtn = page.locator("#participant-form button[type='submit']");
@@ -70,7 +70,7 @@ test.describe("Participantes - mobile", () => {
 
 test.describe("Reglas de sorteo", () => {
   test("requiere minimo tres participantes antes de sortear", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/app");
     const addBtn = page.locator("#participant-form button[type='submit']");
     await page.fill("#name", "Uno");
     await page.fill("#email", "uno@example.com");
@@ -89,7 +89,26 @@ test.describe("Reglas de sorteo", () => {
     await page.fill("#email", "tres@example.com");
     await addBtn.click();
 
+    await page.fill("#note", "Nota de prueba");
     await page.getByRole("button", { name: "Enviar correos" }).click();
-    await expect(page.locator("#toast")).not.toHaveClass(/show/, { timeout: 4000 });
+    await expect(page.locator("#send-overlay-text")).toHaveText("Correos enviados");
+  });
+
+  test("valida formato whatsapp en modo WhatsApp", async ({ page }) => {
+    await page.goto("/app");
+    const addBtn = page.locator("#participant-form button[type='submit']");
+
+    await page.locator("input[name='draw-channel'][value='whatsapp']").check();
+    await expect(page.getByText("Agrega nombre, numero de WhatsApp y marca un Administrador")).toBeVisible();
+
+    await page.fill("#name", "Uno");
+    await page.fill("#email", "12345");
+    await page.locator("#admin-wrapper").click();
+    await addBtn.click();
+    await expect(page.getByText("Numero invalido. Usa formato internacional E.164, por ejemplo +5491122334455.")).toBeVisible();
+
+    await page.fill("#email", "+5491122334455");
+    await addBtn.click();
+    await expect(page.locator("#participants-body tr")).toHaveCount(1);
   });
 });

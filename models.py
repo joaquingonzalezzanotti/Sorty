@@ -1,9 +1,9 @@
 import uuid
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import CheckConstraint, UniqueConstraint, text
+from sqlalchemy import CheckConstraint, UniqueConstraint
 
 db = SQLAlchemy()
 
@@ -33,9 +33,9 @@ class Sorteo(db.Model):
   email_admin = db.Column(db.String(320), nullable=False)  # sin encriptar
   estado = db.Column(db.String(20), nullable=False, default="borrador")
 
-  fecha_creacion = db.Column(db.DateTime(timezone=True), server_default=text("now()"), nullable=False)
+  fecha_creacion = db.Column(db.DateTime(timezone=True), default=datetime.utcnow, nullable=False)
   fecha_expiracion = db.Column(
-    db.DateTime(timezone=True), server_default=text("now() + interval '7 days'"), nullable=False
+    db.DateTime(timezone=True), default=lambda: datetime.utcnow() + timedelta(days=7), nullable=False
   )
 
   participantes = db.relationship(
@@ -95,3 +95,21 @@ class Asignacion(db.Model):
 
   def __repr__(self) -> str:  # pragma: no cover
     return f"<Asignacion sorteo={self.sorteo_id} {self.giver_id}->{self.receiver_id}>"
+
+
+class EmailEnvio(db.Model):
+  __tablename__ = "email_envio"
+
+  id = db.Column(db.Integer, primary_key=True)
+  sorteo_id = db.Column(db.Integer, db.ForeignKey("sorteo.id", ondelete="CASCADE"), nullable=False)
+  participant_id = db.Column(db.Integer, db.ForeignKey("participante.id", ondelete="CASCADE"), nullable=False)
+  status = db.Column(db.String(20), nullable=False)
+  error = db.Column(db.String(255))
+  updated_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+
+  __table_args__ = (
+    UniqueConstraint("sorteo_id", "participant_id", name="uq_email_envio_sorteo_participante"),
+  )
+
+  def __repr__(self) -> str:  # pragma: no cover
+    return f"<EmailEnvio sorteo={self.sorteo_id} participant={self.participant_id} status={self.status}>"
