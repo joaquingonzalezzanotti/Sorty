@@ -428,16 +428,24 @@ def build_admin_whatsapp_text(
     return "\n".join(lines)
 
 
-def kapso_send_text(phone_number_id: str, api_key: str, to_contact: str, body: str) -> dict:
+def whatsapp_templates_enabled() -> bool:
+    value = (os.getenv("WHATSAPP_USE_TEMPLATES") or "1").strip().lower()
+    return value not in {"0", "false", "no", "off"}
+
+
+def template_value(value: Optional[str], default: str = "-") -> str:
+    cleaned = (value or "").strip()
+    return cleaned or default
+
+
+def build_template_body_parameters(order: str, context: Dict[str, str]) -> List[str]:
+    keys = [item.strip() for item in order.split(",") if item.strip()]
+    return [template_value(context.get(key)) for key in keys]
+
+
+def kapso_post_message(phone_number_id: str, api_key: str, payload: dict) -> dict:
     base_url = (os.getenv("KAPSO_BASE_URL") or "https://api.kapso.ai/meta/whatsapp/v24.0").rstrip("/")
     url = f"{base_url}/{phone_number_id}/messages"
-    payload = {
-        "messaging_product": "whatsapp",
-        "recipient_type": "individual",
-        "to": phone_to_wa_id(to_contact),
-        "type": "text",
-        "text": {"body": body},
-    }
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         url,
@@ -455,6 +463,59 @@ def kapso_send_text(phone_number_id: str, api_key: str, to_contact: str, body: s
         raise AppError(f"Kapso rechazo el envio ({exc.code}): {detail[:200]}") from exc
     except urllib.error.URLError as exc:
         raise AppError("No se pudo conectar con Kapso.") from exc
+
+
+def kapso_send_text(phone_number_id: str, api_key: str, to_contact: str, body: str) -> dict:
+    payload = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": phone_to_wa_id(to_contact),
+        "type": "text",
+        "text": {"body": body},
+    }
+    return kapso_post_message(phone_number_id=phone_number_id, api_key=api_key, payload=payload)
+
+
+def kapso_send_template(
+    phone_number_id: str,
+    api_key: str,
+    to_contact: str,
+    template_name: str,
+    language_code: str,
+    body_parameters: List[str],
+    button_url_parameter: Optional[str] = None,
+    button_index: str = "0",
+) -> dict:
+    components = []
+    if body_parameters:
+        components.append(
+            {
+                "type": "body",
+                "parameters": [{"type": "text", "text": template_value(value)} for value in body_parameters],
+            }
+        )
+    if button_url_parameter:
+        components.append(
+            {
+                "type": "button",
+                "subtype": "url",
+                "index": button_index,
+                "parameters": [{"type": "text", "text": template_value(button_url_parameter)}],
+            }
+        )
+
+    payload = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": phone_to_wa_id(to_contact),
+        "type": "template",
+        "template": {
+            "name": template_name,
+            "language": {"code": language_code},
+            "components": components,
+        },
+    }
+    return kapso_post_message(phone_number_id=phone_number_id, api_key=api_key, payload=payload)
 
 
 def dispatch_emails(
@@ -579,12 +640,92 @@ def dispatch_whatsapp_messages(
     if not phone_number_id:
         raise AppError("Falta KAPSO_PHONE_NUMBER_ID para enviar por WhatsApp.")
 
+    if whatsapp_templates_enabled():
+        default_language = (os.getenv("KAPSO_TEMPLATE_LANGUAGE") or "es_MX").strip()
+        participant_template_name = (os.getenv("KAPSO_TEMPLATE_PARTICIPANT_NAME") or "amigo_invisible_confirmacion").strip()
+        admin_template_name = (os.getenv("KAPSO_TEMPLATE_ADMIN_NAME") or "amigo_invisible_results").strip()
+        participant_language = (os.getenv("KAPSO_TEMPLATE_PARTICIPANT_LANGUAGE") or default_language).strip()
+        admin_language = (os.getenv("KAPSO_TEMPLATE_ADMIN_LANGUAGE") or default_language).strip()
+        participant_body_order = (
+            os.getenv("KAPSO_TEMPLATE_PARTICIPANT_BODY_ORDER")
+            or "receiver_name,budget,deadline,note,admin_name,code"
+        ).strip()
+        admin_body_order = (os.getenv("KAPSO_TEMPLATE_ADMIN_BODY_ORDER") or "code,budget,deadline,note").strip()
+        admin_button_index = (os.getenv("KAPSO_TEMPLATE_ADMIN_BUTTON_INDEX") or "").strip()
+        admin_button_value_source = (os.getenv("KAPSO_TEMPLATE_ADMIN_BUTTON_VALUE_SOURCE") or "draw_link").strip().lower()
+
+        if not participant_template_name:
+            raise AppError("Falta KAPSO_TEMPLATE_PARTICIPANT_NAME.")
+        if not admin_template_name:
+            raise AppError("Falta KAPSO_TEMPLATE_ADMIN_NAME.")
+        if not participant_language or not admin_language:
+            raise AppError("Falta idioma de template. Define KAPSO_TEMPLATE_LANGUAGE (ej. es_MX).")
+
+        shared_context = {
+            "budget": template_value(meta.get("budget")),
+            "deadline": template_value(meta.get("deadline")),
+            "note": template_value(meta.get("note")),
+            "code": template_value(meta.get("code")),
+            "admin_name": template_value(admin.get("name")),
+            "admin_contact": template_value(admin.get("email")),
+            "draw_link": template_value(admin_link),
+        }
+
+        sent_count = 0
+        for giver in participants:
+            receiver = by_email[assignments[giver["email"]]]
+            participant_context = {
+                **shared_context,
+                "giver_name": template_value(giver.get("name")),
+                "receiver_name": template_value(receiver.get("name")),
+                "receiver_contact": template_value(receiver.get("email")),
+            }
+            body_parameters = build_template_body_parameters(participant_body_order, participant_context)
+            kapso_send_template(
+                phone_number_id=phone_number_id,
+                api_key=api_key,
+                to_contact=giver["email"],
+                template_name=participant_template_name,
+                language_code=participant_language,
+                body_parameters=body_parameters,
+            )
+            sent_count += 1
+
+        admin_context = {
+            **shared_context,
+            "receiver_name": "-",
+            "receiver_contact": "-",
+            "giver_name": template_value(admin.get("name")),
+        }
+        admin_body_parameters = build_template_body_parameters(admin_body_order, admin_context)
+        admin_button_parameter = None
+        if admin_button_index:
+            if admin_button_value_source == "code":
+                admin_button_parameter = template_value(meta.get("code"))
+            elif admin_button_value_source == "draw_link":
+                admin_button_parameter = template_value(admin_link)
+            else:
+                admin_button_parameter = template_value(os.getenv("KAPSO_TEMPLATE_ADMIN_BUTTON_VALUE"))
+
+        kapso_send_template(
+            phone_number_id=phone_number_id,
+            api_key=api_key,
+            to_contact=admin["email"],
+            template_name=admin_template_name,
+            language_code=admin_language,
+            body_parameters=admin_body_parameters,
+            button_url_parameter=admin_button_parameter,
+            button_index=admin_button_index or "0",
+        )
+        sent_count += 1
+        return {"mode": mode, "sent": True, "emails": sent_count, "transport": "kapso-template"}
+
     sent_count = 0
     for to_contact, _, text in outbound:
         kapso_send_text(phone_number_id=phone_number_id, api_key=api_key, to_contact=to_contact, body=text)
         sent_count += 1
 
-    return {"mode": mode, "sent": True, "emails": sent_count}
+    return {"mode": mode, "sent": True, "emails": sent_count, "transport": "kapso-text"}
 
 
 def send_simple_email(
