@@ -1,3 +1,4 @@
+import imaplib
 import os
 import json
 import random
@@ -9,14 +10,17 @@ import urllib.error
 import urllib.request
 import uuid
 import webbrowser
+from datetime import datetime
+from email import message_from_bytes
 from email.message import EmailMessage
 from email.utils import formataddr
 from typing import Dict, List, Optional, Set, Tuple
 
 from flask import Flask, jsonify, render_template, request, send_from_directory
+from sqlalchemy import inspect
 from sqlalchemy.orm import joinedload
 
-from models import Asignacion, Participante, Sorteo, db
+from models import Asignacion, EmailEnvio, Participante, Sorteo, db
 
 
 def resolve_database_uri() -> str:
@@ -218,7 +222,30 @@ def resolve_logo_source(prefer_inline: bool = True) -> Tuple[str, Optional[dict]
     logo_small = "sorty_logo_small.png"
     logo_large = "sorty_logo.png"
     logo_path = os.path.join(app.static_folder, logo_small)
+def ensure_email_tracking_table() -> bool:
+    try:
+        inspector = inspect(db.engine)
+        if "email_envio" not in inspector.get_table_names():
+            EmailEnvio.__table__.create(db.engine)
+        return True
+    except Exception:
+        return False
 
+
+def format_smtp_error(code: object, response: object) -> str:
+    if isinstance(response, bytes):
+        message = response.decode(errors="replace")
+    else:
+        message = str(response or "")
+    if code:
+        return f"{code} {message}".strip()
+    return message.strip() or "Destinatario rechazado."
+
+
+def resolve_logo_source(prefer_inline: bool = True) -> Tuple[str, Optional[dict]]:
+    logo_small = "sorty_logo_small.png"
+    logo_large = "sorty_logo.png"
+    logo_path = os.path.join(app.static_folder, logo_small)
     if prefer_inline and os.path.isfile(logo_path):
         try:
             with open(logo_path, "rb") as handle:
@@ -258,6 +285,165 @@ def attach_inline_logo(msg: EmailMessage, inline_logo: Optional[dict]) -> None:
         cid=inline_logo["cid"],
     )
 
+
+def imap_configured() -> bool:
+    return bool(os.getenv("IMAP_HOST") and os.getenv("IMAP_USER") and os.getenv("IMAP_PASS"))
+
+
+def extract_emails(text: str) -> Set[str]:
+    return {match.lower() for match in re.findall(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", text, re.I)}
+
+
+def is_bounce_message(msg: EmailMessage) -> bool:
+    subject = (msg.get("Subject") or "").lower()
+    sender = (msg.get("From") or "").lower()
+    if "mailer-daemon" in sender or "mail delivery subsystem" in sender:
+        return True
+    return "delivery status notification" in subject or "undelivered" in subject or "address not found" in subject
+
+
+def extract_bounce_data(msg: EmailMessage) -> Tuple[Set[str], Optional[str]]:
+    recipients: Set[str] = set()
+    diagnostic = None
+
+    for part in msg.walk():
+        content_type = part.get_content_type()
+        if content_type == "message/delivery-status":
+            payload = part.get_payload()
+            blocks = payload if isinstance(payload, list) else []
+            for block in blocks:
+                for key in ("Final-Recipient", "Original-Recipient"):
+                    value = block.get(key)
+                    if value:
+                        recipients.update(extract_emails(value))
+                if not diagnostic:
+                    diag = block.get("Diagnostic-Code")
+                    if diag:
+                        diagnostic = str(diag)
+        elif content_type == "text/plain":
+            try:
+                charset = part.get_content_charset() or "utf-8"
+                text_bytes = part.get_payload(decode=True)
+                if text_bytes:
+                    text = text_bytes.decode(charset, errors="replace")
+                else:
+                    text = part.get_payload()
+                if text:
+                    recipients.update(extract_emails(text))
+                    if not diagnostic:
+                        for line in text.splitlines():
+                            if "diagnostic-code" in line.lower():
+                                diagnostic = line.split(":", 1)[-1].strip()
+                                break
+            except Exception:
+                continue
+
+    if not recipients:
+        for header in ("Final-Recipient", "Original-Recipient", "To"):
+            value = msg.get(header)
+            if value:
+                recipients.update(extract_emails(value))
+
+    if not diagnostic:
+        subject = msg.get("Subject")
+        if subject:
+            diagnostic = subject.strip()
+
+    if diagnostic:
+        diagnostic = diagnostic.strip()
+        if len(diagnostic) > 255:
+            diagnostic = diagnostic[:252] + "..."
+
+    return recipients, diagnostic
+
+
+def poll_bounces_for_draw(sorteo_id: int) -> dict:
+    if not ensure_email_tracking_table():
+        return {"ok": False, "error": "No se pudo preparar el tracking de emails."}
+    if not imap_configured():
+        return {"ok": False, "error": "IMAP no configurado."}
+
+    sorteo = Sorteo.query.get(sorteo_id)
+    if not sorteo:
+        return {"ok": False, "error": "Sorteo no encontrado."}
+
+    participant_map = {normalize_email(p.email): p.id for p in sorteo.participantes}
+    if not participant_map:
+        return {"ok": True, "updated": 0}
+
+    host = os.getenv("IMAP_HOST")
+    port = int(os.getenv("IMAP_PORT", "993"))
+    user = os.getenv("IMAP_USER")
+    password = os.getenv("IMAP_PASS")
+    folder = os.getenv("IMAP_FOLDER", "INBOX")
+
+    updated = 0
+    try:
+        with imaplib.IMAP4_SSL(host, port) as imap:
+            imap.login(user, password)
+            imap.select(folder)
+            status, data = imap.search(None, "UNSEEN")
+            if status != "OK":
+                return {"ok": False, "error": "No se pudo leer el inbox de rebotes."}
+            for uid in data[0].split():
+                status, msg_data = imap.fetch(uid, "(RFC822)")
+                if status != "OK":
+                    continue
+                raw = next((item[1] for item in msg_data if isinstance(item, tuple)), None)
+                if not raw:
+                    continue
+                msg = message_from_bytes(raw)
+                if not is_bounce_message(msg):
+                    continue
+                recipients, diagnostic = extract_bounce_data(msg)
+                if not recipients:
+                    continue
+                matched = {email for email in recipients if email in participant_map}
+                if not matched:
+                    continue
+                error = diagnostic or "Correo rechazado."
+                for email_addr in matched:
+                    participant_id = participant_map[email_addr]
+                    record = EmailEnvio.query.filter_by(
+                        sorteo_id=sorteo_id, participant_id=participant_id
+                    ).first()
+                    if record:
+                        record.status = "error"
+                        record.error = error
+                        record.updated_at = datetime.utcnow()
+                    else:
+                        db.session.add(
+                            EmailEnvio(
+                                sorteo_id=sorteo_id,
+                                participant_id=participant_id,
+                                status="error",
+                                error=error,
+                                updated_at=datetime.utcnow(),
+                            )
+                        )
+                    updated += 1
+                imap.store(uid, "+FLAGS", "\\Seen")
+
+        db.session.commit()
+        return {"ok": True, "updated": updated}
+    except Exception as exc:
+        db.session.rollback()
+        return {"ok": False, "error": str(exc)}
+
+
+def schedule_bounce_polls(sorteo_id: int) -> None:
+    if not imap_configured():
+        return
+    delays = [5 * 60, 2 * 60 * 60]
+    for delay in delays:
+        timer = threading.Timer(delay, lambda sid=sorteo_id: run_bounce_poll(sid))
+        timer.daemon = True
+        timer.start()
+
+
+def run_bounce_poll(sorteo_id: int) -> None:
+    with app.app_context():
+        poll_bounces_for_draw(sorteo_id)
 
 def build_participant_email(
     giver: dict,
@@ -525,6 +711,9 @@ def dispatch_emails(
     exclusions: List[Tuple[str, str]],
     mode_override: Optional[str] = None,
     admin_link: Optional[str] = None,
+    sorteo_id: Optional[int] = None,
+    only_emails: Optional[Set[str]] = None,
+    include_admin: bool = True,
 ) -> Dict[str, object]:
     mode = (mode_override or os.getenv("EMAIL_MODE", "smtp")).lower()
     sender_email = os.getenv("SMTP_FROM_EMAIL") or os.getenv("SMTP_USER") or "sorty@example.com"
@@ -533,11 +722,16 @@ def dispatch_emails(
     admin = next(p for p in participants if p["is_admin"])
     admin_contact = admin["name"]
     by_email = {p["email"]: p for p in participants}
+    participant_id_by_email = {p["email"]: p.get("id") for p in participants if p.get("id")}
     logo_src, logo_inline = resolve_logo_source(prefer_inline=mode != "console")
+    tracking_enabled = bool(sorteo_id) and ensure_email_tracking_table()
+    only_emails_norm = {normalize_email(email) for email in only_emails} if only_emails else None
 
-    messages: List[EmailMessage] = []
+    messages: List[dict] = []
 
     for giver in participants:
+        if only_emails_norm and normalize_email(giver["email"]) not in only_emails_norm:
+            continue
         receiver = by_email[assignments[giver["email"]]]
         subject, html_body, text_body = build_participant_email(
             giver, receiver, meta, admin_contact, sender_name, logo_src
@@ -549,28 +743,69 @@ def dispatch_emails(
         msg.set_content(text_body)
         msg.add_alternative(html_body, subtype="html")
         attach_inline_logo(msg, logo_inline)
-        messages.append(msg)
+        messages.append(
+            {
+                "msg": msg,
+                "email": giver["email"],
+                "participant_id": participant_id_by_email.get(giver["email"]),
+                "kind": "participant",
+            }
+        )
 
-    admin_subject, admin_html, admin_text = build_admin_email(
-        assignments, participants, meta, sender_name, logo_src, exclusions, admin_link, code=meta.get("code")
-    )
-    admin_msg = EmailMessage()
-    admin_msg["Subject"] = admin_subject
-    admin_msg["From"] = formataddr((sender_name, sender_email))
-    admin_msg["To"] = formataddr((admin["name"], admin["email"]))
-    admin_msg.set_content(admin_text)
-    admin_msg.add_alternative(admin_html, subtype="html")
-    attach_inline_logo(admin_msg, logo_inline)
-    messages.append(admin_msg)
+    if include_admin:
+        admin_subject, admin_html, admin_text = build_admin_email(
+            assignments,
+            participants,
+            meta,
+            sender_name,
+            logo_src,
+            exclusions,
+            admin_link,
+            code=meta.get("code"),
+        )
+        admin_msg = EmailMessage()
+        admin_msg["Subject"] = admin_subject
+        admin_msg["From"] = formataddr((sender_name, sender_email))
+        admin_msg["To"] = formataddr((admin["name"], admin["email"]))
+        admin_msg.set_content(admin_text)
+        admin_msg.add_alternative(admin_html, subtype="html")
+        attach_inline_logo(admin_msg, logo_inline)
+        messages.append({"msg": admin_msg, "email": admin["email"], "participant_id": None, "kind": "admin"})
+
+    participant_results: List[dict] = []
+    participant_total = len([m for m in messages if m["kind"] == "participant"])
+    participant_sent = 0
+    participant_error = 0
+    status_updates: List[dict] = []
 
     if mode == "console":
-        for msg in messages:
+        for entry in messages:
+            msg = entry["msg"]
             print("\n" + "-" * 60)
             print(f"To: {msg['To']}")
             print(f"Subject: {msg['Subject']}")
             plain = msg.get_body(preferencelist=("plain",))
             print(plain.get_content() if plain else msg.as_string())
-        return {"mode": mode, "sent": False, "emails": len(messages)}
+            if entry["kind"] == "participant":
+                participant_results.append(
+                    {
+                        "email": entry["email"],
+                        "participant_id": entry["participant_id"],
+                        "status": "sent",
+                        "error": None,
+                    }
+                )
+                participant_sent += 1
+        return {
+            "mode": mode,
+            "sent": False,
+            "emails": len(messages),
+            "participant_total": participant_total,
+            "participant_sent": participant_sent,
+            "participant_error": participant_error,
+            "results": participant_results,
+            "errors": [],
+        }
 
     if mode != "smtp":
         raise AppError(f"EMAIL_MODE desconocido: {mode}")
@@ -587,10 +822,88 @@ def dispatch_emails(
     with smtplib.SMTP(host, port, timeout=30) as server:
         server.starttls(context=context)
         server.login(user, password)
-        for msg in messages:
-            server.send_message(msg)
+        for entry in messages:
+            msg = entry["msg"]
+            status = "sent"
+            error = None
+            try:
+                refused = server.send_message(msg)
+                if refused:
+                    info = refused.get(entry["email"])
+                    if info:
+                        status = "error"
+                        error = format_smtp_error(info[0], info[1])
+                    else:
+                        status = "error"
+                        error = "Destinatario rechazado."
+            except smtplib.SMTPRecipientsRefused as exc:
+                info = exc.recipients.get(entry["email"])
+                status = "error"
+                if info:
+                    error = format_smtp_error(info[0], info[1])
+                else:
+                    error = "Destinatario rechazado."
+            except smtplib.SMTPException as exc:
+                status = "error"
+                error = str(exc)
 
-        return {"mode": mode, "sent": True, "emails": len(messages)}
+            if entry["kind"] == "participant":
+                participant_results.append(
+                    {
+                        "email": entry["email"],
+                        "participant_id": entry["participant_id"],
+                        "status": status,
+                        "error": error,
+                    }
+                )
+                if status == "sent":
+                    participant_sent += 1
+                else:
+                    participant_error += 1
+                if tracking_enabled and entry["participant_id"]:
+                    status_updates.append(
+                        {
+                            "participant_id": entry["participant_id"],
+                            "status": status,
+                            "error": error,
+                        }
+                    )
+
+    if tracking_enabled and status_updates:
+        try:
+            for update in status_updates:
+                record = EmailEnvio.query.filter_by(
+                    sorteo_id=sorteo_id, participant_id=update["participant_id"]
+                ).first()
+                if record:
+                    record.status = update["status"]
+                    record.error = update["error"]
+                    record.updated_at = datetime.utcnow()
+                else:
+                    db.session.add(
+                        EmailEnvio(
+                            sorteo_id=sorteo_id,
+                            participant_id=update["participant_id"],
+                            status=update["status"],
+                            error=update["error"],
+                            updated_at=datetime.utcnow(),
+                        )
+                    )
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+
+    error_list = [r for r in participant_results if r["status"] == "error"]
+    return {
+        "mode": mode,
+        "sent": True,
+        "emails": len(messages),
+        "participant_total": participant_total,
+        "participant_sent": participant_sent,
+        "participant_error": participant_error,
+        "results": participant_results,
+        "errors": error_list,
+    }
 
 
 def dispatch_whatsapp_messages(
@@ -807,8 +1120,13 @@ def dispatch_notifications(
     channel: str,
     mode_override: Optional[str] = None,
     admin_link: Optional[str] = None,
+    sorteo_id: Optional[int] = None,
+    only_emails: Optional[Set[str]] = None,
+    include_admin: bool = True,
 ) -> Dict[str, object]:
     if channel == "whatsapp":
+        if only_emails or not include_admin:
+            raise AppError("El reenvio individual solo aplica al canal email.")
         return dispatch_whatsapp_messages(
             participants=participants,
             assignments=assignments,
@@ -825,6 +1143,9 @@ def dispatch_notifications(
         exclusions=exclusions,
         mode_override=mode_override,
         admin_link=admin_link,
+        sorteo_id=sorteo_id,
+        only_emails=only_emails,
+        include_admin=include_admin,
     )
 
 
@@ -869,6 +1190,7 @@ def load_draw_data(code: str) -> Tuple[Sorteo, dict]:
                 "is_admin": p.email.lower() == sorteo.email_admin.lower(),
             }
         )
+    participant_by_email = {p["email"]: p for p in participants}
 
     exclusions: List[Tuple[str, str]] = []
     for p in sorteo.participantes:
@@ -878,6 +1200,15 @@ def load_draw_data(code: str) -> Tuple[Sorteo, dict]:
     assignments: Dict[str, str] = {}
     for a in sorteo.asignaciones:
         assignments[a.giver.email] = a.receiver.email
+
+    status_map: Dict[int, dict] = {}
+    try:
+        inspector = inspect(db.engine)
+        if "email_envio" in inspector.get_table_names():
+            for record in EmailEnvio.query.filter_by(sorteo_id=sorteo.id).all():
+                status_map[record.participant_id] = {"status": record.status, "error": record.error}
+    except Exception:
+        status_map = {}
 
     payload = {
         "id": str(sorteo.public_id),
@@ -894,8 +1225,12 @@ def load_draw_data(code: str) -> Tuple[Sorteo, dict]:
                 "receiver_email": receiver,
                 "giver_contact": giver,
                 "receiver_contact": receiver,
-                "giver_name": next((p["name"] for p in participants if p["email"] == giver), giver),
-                "receiver_name": next((p["name"] for p in participants if p["email"] == receiver), receiver),
+                "giver_name": participant_by_email.get(giver, {}).get("name", giver),
+                "receiver_name": participant_by_email.get(receiver, {}).get("name", receiver),
+                "giver_id": participant_by_email.get(giver, {}).get("id"),
+                "receiver_id": participant_by_email.get(receiver, {}).get("id"),
+                "email_status": status_map.get(participant_by_email.get(giver, {}).get("id", -1), {}).get("status"),
+                "email_error": status_map.get(participant_by_email.get(giver, {}).get("id", -1), {}).get("error"),
             }
             for giver, receiver in assignments.items()
         ],
@@ -925,6 +1260,14 @@ def update_participant_contact(sorteo: Sorteo, participant_id: int, new_contact:
         admin_contact_updated = True
 
     db.session.commit()
+
+    try:
+        inspector = inspect(db.engine)
+        if "email_envio" in inspector.get_table_names():
+            EmailEnvio.query.filter_by(sorteo_id=sorteo.id, participant_id=participant.id).delete()
+            db.session.commit()
+    except Exception:
+        db.session.rollback()
 
     notified = False
     if notify_previous and old_contact.lower() != new_contact_norm.lower() and draw_channel == "email":
@@ -978,6 +1321,12 @@ def save_draw_to_db(
         record = Participante(sorteo=sorteo, nombre=p["name"], email=p["email"])
         db.session.add(record)
         by_email[p["email"]] = record
+
+    db.session.flush()
+    for p in participants:
+        record = by_email.get(p["email"])
+        if record:
+            p["id"] = record.id
 
     for giver_email, receiver_email in exclusions:
         giver = by_email.get(giver_email)
@@ -1158,7 +1507,15 @@ def api_draw():
                 channel=channel,
                 mode_override=mode_override,
                 admin_link=draw_link,
+                sorteo_id=sorteo_record.id if sorteo_record else None,
             )
+            if (
+                channel == "email"
+                and delivery_status
+                and delivery_status.get("mode") == "smtp"
+                and sorteo_record
+            ):
+                schedule_bounce_polls(sorteo_record.id)
 
         default_mode = os.getenv("EMAIL_MODE", "smtp") if channel == "email" else os.getenv("WHATSAPP_MODE", "kapso")
         response = {
@@ -1208,6 +1565,12 @@ def api_draw_resend(code: str):
     try:
         sorteo, data = load_draw_data(code)
         channel = normalize_channel(data.get("channel") or infer_channel_from_contact(data.get("email_admin") or ""))
+        if mode_override:
+            allowed_modes = {"console", "smtp"} if channel == "email" else {"console", "kapso"}
+            if mode_override not in allowed_modes:
+                if channel == "email":
+                    raise AppError("Modo de email invalido. Usa console o smtp.")
+                raise AppError("Modo de WhatsApp invalido. Usa console o kapso.")
         participants = data["participants"]
         exclusions = data["exclusions"]
         assignments = {item["giver_email"]: item["receiver_email"] for item in data["assignments"]}
@@ -1231,8 +1594,11 @@ def api_draw_resend(code: str):
             channel=channel,
             mode_override=mode_override,
             admin_link=build_sorteo_link(sorteo),
+            sorteo_id=sorteo.id,
         )
         message = "Correos reenviados." if channel == "email" else "Mensajes de WhatsApp reenviados."
+        if channel == "email" and delivery_status and delivery_status.get("mode") == "smtp":
+            schedule_bounce_polls(sorteo.id)
         return jsonify(
             {
                 "ok": True,
@@ -1242,6 +1608,57 @@ def api_draw_resend(code: str):
                 "channel": channel,
             }
         )
+    except AppError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception:
+        return jsonify({"ok": False, "error": "Error inesperado en el servidor."}), 500
+
+
+@app.route("/api/sorteo/<code>/participant/<int:participant_id>/resend", methods=["POST"])
+@app.route("/api/draw/<code>/participant/<int:participant_id>/resend", methods=["POST"])  # alias antiguo
+def api_draw_resend_participant(code: str, participant_id: int):
+    payload = request.get_json(silent=True) or {}
+    mode_override = (payload.get("mode") or "").strip().lower() or None
+    try:
+        sorteo, data = load_draw_data(code)
+        channel = normalize_channel(data.get("channel") or infer_channel_from_contact(data.get("email_admin") or ""))
+        if channel != "email":
+            raise AppError("El reenvio individual solo esta disponible para sorteos por email.")
+        if mode_override and mode_override not in {"console", "smtp"}:
+            raise AppError("Modo de email invalido. Usa console o smtp.")
+        participants = data["participants"]
+        exclusions = data["exclusions"]
+        assignments = {item["giver_email"]: item["receiver_email"] for item in data["assignments"]}
+
+        participant = next((p for p in participants if p["id"] == participant_id), None)
+        if not participant:
+            raise AppError("Participante no encontrado en este sorteo.")
+
+        admin = next((p for p in participants if p["is_admin"]), None)
+        if not admin:
+            raise AppError("No se encontro Administrador para este sorteo.")
+
+        meta_clean = {
+            "budget": "",
+            "deadline": "",
+            "note": "",
+            "admin": admin,
+            "code": sorteo.code,
+        }
+        email_status = dispatch_emails(
+            participants,
+            assignments,
+            meta_clean,
+            exclusions,
+            mode_override,
+            admin_link=build_sorteo_link(sorteo),
+            sorteo_id=sorteo.id,
+            only_emails={participant["email"]},
+            include_admin=False,
+        )
+        if email_status and email_status.get("mode") == "smtp":
+            schedule_bounce_polls(sorteo.id)
+        return jsonify({"ok": True, "message": "Correo reenviado.", "email_status": email_status})
     except AppError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
     except Exception:
