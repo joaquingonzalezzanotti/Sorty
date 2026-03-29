@@ -840,6 +840,25 @@ def build_template_body_parameters(order: str, context: Dict[str, str]) -> List[
     return [template_value(context.get(key)) for key in keys]
 
 
+def log_template_diagnostic(
+    phone_number_id: str,
+    template_name: str,
+    language_code: str,
+    body_order: str,
+    to_contact: str,
+    body_parameters: List[str],
+) -> None:
+    diagnostic = {
+        "phone_number_id": phone_number_id,
+        "template": template_name,
+        "lang": language_code,
+        "body_order": body_order,
+        "to": phone_to_wa_id(to_contact),
+        "body_parameters": body_parameters,
+    }
+    app.logger.info("KAPSO_TEMPLATE_DIAGNOSTIC %s", json.dumps(diagnostic, ensure_ascii=False))
+
+
 def kapso_post_message(phone_number_id: str, api_key: str, payload: dict) -> dict:
     base_url = (os.getenv("KAPSO_BASE_URL") or "https://api.kapso.ai/meta/whatsapp/v24.0").rstrip("/")
     url = f"{base_url}/{phone_number_id}/messages"
@@ -1208,6 +1227,14 @@ def dispatch_whatsapp_messages(
                 "receiver_contact": template_value(receiver.get("email")),
             }
             body_parameters = build_template_body_parameters(participant_body_order, participant_context)
+            log_template_diagnostic(
+                phone_number_id=phone_number_id,
+                template_name=participant_template_name,
+                language_code=participant_language,
+                body_order=participant_body_order,
+                to_contact=giver["email"],
+                body_parameters=body_parameters,
+            )
             try:
                 kapso_send_template(
                     phone_number_id=phone_number_id,
@@ -1242,6 +1269,14 @@ def dispatch_whatsapp_messages(
             else:
                 admin_button_parameter = template_value(os.getenv("KAPSO_TEMPLATE_ADMIN_BUTTON_VALUE"))
 
+        log_template_diagnostic(
+            phone_number_id=phone_number_id,
+            template_name=admin_template_name,
+            language_code=admin_language,
+            body_order=admin_body_order,
+            to_contact=admin["email"],
+            body_parameters=admin_body_parameters,
+        )
         try:
             kapso_send_template(
                 phone_number_id=phone_number_id,
