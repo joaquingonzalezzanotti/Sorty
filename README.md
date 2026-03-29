@@ -57,6 +57,7 @@ Sorty es una app web para organizar sorteos de amigo invisible con un flujo simp
 - `KAPSO_API_KEY` (obligatoria para modo `kapso`)
 - `KAPSO_PHONE_NUMBER_ID` (opcional, por defecto `1116659434858231`)
 - `KAPSO_BASE_URL` (opcional, por defecto `https://api.kapso.ai/meta/whatsapp/v24.0`)
+- `KAPSO_USER_AGENT` (opcional, por defecto `Sorty/1.0 (+https://sorty.com.ar)`)
 - `WHATSAPP_USE_TEMPLATES=1|0` (por defecto `1`; en `kapso` envia `type: template`)
 - `KAPSO_TEMPLATE_LANGUAGE` (por defecto `es_AR`)
 - `KAPSO_TEMPLATE_PARTICIPANT_NAME` (por defecto `amigo_invisible_confirmacion`)
