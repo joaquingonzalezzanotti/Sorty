@@ -247,6 +247,11 @@ def kapso_error_hint(status_code: int, info: dict) -> str:
     code = str(info.get("code") or "")
 
     if code == "1010":
+        if raw.strip() == "error code: 1010":
+            return (
+                "El gateway rechazo la solicitud (WAF/Cloudflare 1010). "
+                "Suele pasar por User-Agent/headers. Usa User-Agent explicito en requests a Kapso."
+            )
         return (
             "Revisa template/idioma y cantidad de parametros. "
             "Tambien valida que KAPSO_API_KEY y KAPSO_PHONE_NUMBER_ID pertenezcan al mismo proyecto LIVE."
@@ -891,13 +896,19 @@ def log_template_diagnostic(
 
 def kapso_post_message(phone_number_id: str, api_key: str, payload: dict) -> dict:
     base_url = (os.getenv("KAPSO_BASE_URL") or "https://api.kapso.ai/meta/whatsapp/v24.0").rstrip("/")
+    user_agent = (os.getenv("KAPSO_USER_AGENT") or "Sorty/1.0 (+https://sorty.com.ar)").strip()
     url = f"{base_url}/{phone_number_id}/messages"
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         url,
         data=data,
         method="POST",
-        headers={"Content-Type": "application/json", "X-API-Key": api_key},
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": user_agent,
+            "X-API-Key": api_key,
+        },
     )
 
     try:
