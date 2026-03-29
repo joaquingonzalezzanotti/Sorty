@@ -236,7 +236,7 @@ def kapso_error_hint(status_code: int, info: dict) -> str:
     if "template" in raw and ("not found" in raw or "does not exist" in raw):
         return "El template no existe para ese numero o workspace. Verifica nombre exacto e idioma aprobado."
     if "language" in raw:
-        return "El idioma del template no coincide con uno aprobado. Usa el locale exacto (ej: es_AR, es_MX)."
+        return "El idioma del template no coincide con uno aprobado. Usa el locale exacto (ej: es_AR)."
     if "quality" in raw or "limit" in raw or "rate" in raw:
         return "El numero puede estar limitado por calidad o tier. Revisa Messaging limits y estado del display name."
     if "permission" in raw or "unauthorized" in raw:
@@ -1168,14 +1168,14 @@ def dispatch_whatsapp_messages(
         raise AppError("Falta KAPSO_PHONE_NUMBER_ID para enviar por WhatsApp.")
 
     if whatsapp_templates_enabled():
-        default_language = (os.getenv("KAPSO_TEMPLATE_LANGUAGE") or "es_MX").strip()
+        default_language = (os.getenv("KAPSO_TEMPLATE_LANGUAGE") or "es_AR").strip()
         participant_template_name = (os.getenv("KAPSO_TEMPLATE_PARTICIPANT_NAME") or "amigo_invisible_confirmacion").strip()
         admin_template_name = (os.getenv("KAPSO_TEMPLATE_ADMIN_NAME") or "amigo_invisible_results").strip()
         participant_language = (os.getenv("KAPSO_TEMPLATE_PARTICIPANT_LANGUAGE") or default_language).strip()
         admin_language = (os.getenv("KAPSO_TEMPLATE_ADMIN_LANGUAGE") or default_language).strip()
         participant_body_order = (
             os.getenv("KAPSO_TEMPLATE_PARTICIPANT_BODY_ORDER")
-            or "receiver_name,budget,deadline,note,admin_name,code"
+            or "giver_name,receiver_name,budget,deadline,note,admin_name"
         ).strip()
         admin_body_order = (os.getenv("KAPSO_TEMPLATE_ADMIN_BODY_ORDER") or "code,budget,deadline,note").strip()
         admin_button_index = (os.getenv("KAPSO_TEMPLATE_ADMIN_BUTTON_INDEX") or "").strip()
@@ -1186,7 +1186,7 @@ def dispatch_whatsapp_messages(
         if not admin_template_name:
             raise AppError("Falta KAPSO_TEMPLATE_ADMIN_NAME.")
         if not participant_language or not admin_language:
-            raise AppError("Falta idioma de template. Define KAPSO_TEMPLATE_LANGUAGE (ej. es_MX).")
+            raise AppError("Falta idioma de template. Define KAPSO_TEMPLATE_LANGUAGE (ej. es_AR).")
 
         shared_context = {
             "budget": template_value(meta.get("budget")),
