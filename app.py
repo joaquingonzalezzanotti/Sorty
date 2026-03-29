@@ -15,8 +15,9 @@ from email import message_from_bytes
 from email.message import EmailMessage
 from email.utils import formataddr
 from typing import Dict, List, Optional, Set, Tuple
+from xml.sax.saxutils import escape as xml_escape
 
-from flask import Flask, jsonify, render_template, request, send_from_directory
+from flask import Flask, Response, jsonify, render_template, request, send_from_directory
 from sqlalchemy import inspect
 from sqlalchemy.orm import joinedload
 
@@ -51,6 +52,41 @@ app.config["SQLALCHEMY_DATABASE_URI"] = resolve_database_uri()
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 db.init_app(app)
 _schema_initialized = False
+
+
+def resolve_public_base_url() -> str:
+    base = (os.getenv("PUBLIC_APP_URL") or "").strip().rstrip("/")
+    if not base:
+        try:
+            base = (request.url_root or "").strip().rstrip("/")
+        except RuntimeError:
+            base = "https://sorty.com.ar"
+    if not base:
+        base = "https://sorty.com.ar"
+    if base.startswith("http://") and "localhost" not in base and "127.0.0.1" not in base:
+        base = "https://" + base[len("http://") :]
+    return base
+
+
+@app.after_request
+def add_security_headers(response):
+    csp = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; "
+        "img-src 'self' data: https:; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
+    )
+    response.headers["Content-Security-Policy"] = csp
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    return response
 
 
 class AppError(Exception):
@@ -408,14 +444,7 @@ def resolve_logo_source(prefer_inline: bool = True) -> Tuple[str, Optional[dict]
             }
 
     filename = logo_small if os.path.isfile(logo_path) else logo_large
-    base = (os.getenv("PUBLIC_APP_URL") or "").strip().rstrip("/")
-    if not base:
-        try:
-            base = (request.url_root or "").rstrip("/")
-        except RuntimeError:
-            base = "http://localhost:5000"
-    if base.startswith("http://") and "localhost" not in base and "127.0.0.1" not in base:
-        base = "https://" + base[len("http://") :]
+    base = resolve_public_base_url()
     return f"{base}/static/{filename}", None
 
 
@@ -1325,12 +1354,7 @@ def dispatch_notifications(
 
 def build_sorteo_link(sorteo: Sorteo) -> str:
     """Return an absolute link to the stored draw (sorteo)."""
-    base = (os.getenv("PUBLIC_APP_URL") or "").strip().rstrip("/")
-    if not base:
-        try:
-            base = (request.url_root or "").rstrip("/")
-        except RuntimeError:
-            base = "http://localhost:5000"
+    base = resolve_public_base_url()
     return f"{base}/sorteo/{sorteo.code}"
 
 
@@ -1538,11 +1562,7 @@ def assignment_for_client(assignments: Dict[str, str], participants: List[dict])
 
 @app.route("/", methods=["GET"])
 def landing():
-    base = (os.getenv("PUBLIC_APP_URL") or request.url_root or "").strip().rstrip("/")
-    if not base:
-        base = "https://sorty-neon.vercel.app"
-    if base.startswith("http://") and "localhost" not in base and "127.0.0.1" not in base:
-        base = "https://" + base[len("http://") :]
+    base = resolve_public_base_url()
     return render_template(
         "landing.html",
         canonical_url=f"{base}/",
@@ -1553,9 +1573,58 @@ def landing():
 
 @app.route("/app", methods=["GET"])
 def index():
+    base = resolve_public_base_url()
     email_mode = os.getenv("EMAIL_MODE", "smtp").lower()
     whatsapp_mode = os.getenv("WHATSAPP_MODE", "kapso").lower()
-    return render_template("index.html", email_mode=email_mode, whatsapp_mode=whatsapp_mode)
+    return render_template(
+        "index.html",
+        email_mode=email_mode,
+        whatsapp_mode=whatsapp_mode,
+        canonical_url=f"{base}/app",
+        og_image_url=f"{base}/static/sorty_logo.png",
+    )
+
+
+@app.route("/robots.txt", methods=["GET"])
+def robots_txt():
+    base = resolve_public_base_url()
+    lines = [
+        "User-agent: *",
+        "Allow: /",
+        "Disallow: /api/",
+        "Disallow: /preview/",
+        "Disallow: /sorteo/",
+        "Disallow: /draw/",
+        f"Sitemap: {base}/sitemap.xml",
+    ]
+    return Response("\n".join(lines) + "\n", content_type="text/plain; charset=utf-8")
+
+
+@app.route("/sitemap.xml", methods=["GET"])
+def sitemap_xml():
+    base = resolve_public_base_url()
+    today = datetime.utcnow().date().isoformat()
+    entries = [
+        {"loc": f"{base}/", "changefreq": "weekly", "priority": "1.0"},
+        {"loc": f"{base}/app", "changefreq": "weekly", "priority": "0.9"},
+    ]
+    xml_lines = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+    ]
+    for entry in entries:
+        xml_lines.extend(
+            [
+                "  <url>",
+                f"    <loc>{xml_escape(entry['loc'])}</loc>",
+                f"    <lastmod>{today}</lastmod>",
+                f"    <changefreq>{entry['changefreq']}</changefreq>",
+                f"    <priority>{entry['priority']}</priority>",
+                "  </url>",
+            ]
+        )
+    xml_lines.append("</urlset>")
+    return Response("\n".join(xml_lines), content_type="application/xml; charset=utf-8")
 
 
 @app.route("/preview/email/participant", methods=["GET"])
