@@ -17,7 +17,7 @@ from email.utils import formataddr
 from typing import Dict, List, Optional, Set, Tuple
 from xml.sax.saxutils import escape as xml_escape
 
-from flask import Flask, Response, jsonify, render_template, request, send_from_directory
+from flask import Flask, Response, jsonify, redirect, render_template, request, send_from_directory
 from sqlalchemy import inspect
 from sqlalchemy.orm import joinedload
 
@@ -55,17 +55,52 @@ _schema_initialized = False
 
 
 def resolve_public_base_url() -> str:
+    primary_domain = (os.getenv("PRIMARY_DOMAIN") or "sorty.com.ar").strip().lower()
+    vercel_env = (os.getenv("VERCEL_ENV") or "").strip().lower()
     base = (os.getenv("PUBLIC_APP_URL") or "").strip().rstrip("/")
+    if base and vercel_env == "production" and "vercel.app" in base:
+        base = f"https://{primary_domain}"
     if not base:
+        host = ""
         try:
-            base = (request.url_root or "").strip().rstrip("/")
+            host = ((request.host or "").split(":")[0]).strip().lower()
         except RuntimeError:
-            base = "https://sorty.com.ar"
+            host = ""
+        if host in {"localhost", "127.0.0.1"} or host.endswith(".localhost"):
+            try:
+                base = (request.url_root or "").strip().rstrip("/")
+            except RuntimeError:
+                base = f"https://{primary_domain}"
+        else:
+            base = f"https://{primary_domain}"
     if not base:
         base = "https://sorty.com.ar"
     if base.startswith("http://") and "localhost" not in base and "127.0.0.1" not in base:
         base = "https://" + base[len("http://") :]
     return base
+
+
+@app.before_request
+def enforce_primary_domain():
+    vercel_env = (os.getenv("VERCEL_ENV") or "").strip().lower()
+    if vercel_env == "preview":
+        return None
+
+    primary_domain = (os.getenv("PRIMARY_DOMAIN") or "sorty.com.ar").strip().lower()
+    if not primary_domain:
+        return None
+
+    host = ((request.host or "").split(":")[0]).strip().lower()
+    if host in {"localhost", "127.0.0.1"} or host.endswith(".localhost"):
+        return None
+    if host == primary_domain:
+        return None
+
+    query = request.query_string.decode("utf-8", errors="ignore")
+    destination = f"https://{primary_domain}{request.path}"
+    if query:
+        destination = f"{destination}?{query}"
+    return redirect(destination, code=308)
 
 
 @app.after_request
