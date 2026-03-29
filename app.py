@@ -158,6 +158,25 @@ def error_payload_from_exception(exc: Exception, default_message: str = "Error i
     return {"ok": False, "error": default_message}
 
 
+def log_api_app_error(endpoint: str, payload: dict, exc: AppError) -> None:
+    safe_payload = {
+        "channel": payload.get("channel"),
+        "mode": payload.get("mode"),
+        "send": bool(payload.get("send")),
+        "participants_count": len(payload.get("participants") or []),
+        "exclusions_count": len(payload.get("exclusions") or []),
+    }
+    diagnostic = {
+        "endpoint": endpoint,
+        "error": exc.message,
+        "error_code": exc.code,
+        "error_hint": exc.hint,
+        "error_source": exc.source,
+        "request": safe_payload,
+    }
+    app.logger.warning("API_APP_ERROR %s", json.dumps(diagnostic, ensure_ascii=False))
+
+
 def parse_kapso_error_detail(detail: str) -> dict:
     raw_detail = (detail or "").strip()
     parsed: dict = {}
@@ -1853,8 +1872,10 @@ def api_draw():
         return jsonify(response)
 
     except AppError as exc:
+        log_api_app_error(endpoint="/api/sorteo", payload=payload, exc=exc)
         return jsonify(error_payload_from_exception(exc)), 400
     except Exception as exc:  # pragma: no cover - safety net
+        app.logger.exception("API_UNHANDLED_ERROR endpoint=/api/sorteo")
         return jsonify(error_payload_from_exception(exc)), 500
 
 
@@ -1922,8 +1943,10 @@ def api_draw_resend(code: str):
             }
         )
     except AppError as exc:
+        log_api_app_error(endpoint="/api/sorteo/<code>/resend", payload=payload, exc=exc)
         return jsonify(error_payload_from_exception(exc)), 400
     except Exception as exc:
+        app.logger.exception("API_UNHANDLED_ERROR endpoint=/api/sorteo/<code>/resend")
         return jsonify(error_payload_from_exception(exc)), 500
 
 
