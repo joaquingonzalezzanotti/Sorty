@@ -1,4 +1,5 @@
 import imaplib
+import hashlib
 import os
 import json
 import random
@@ -859,8 +860,16 @@ def build_template_body_parameters(order: str, context: Dict[str, str]) -> List[
     return [template_value(context.get(key)) for key in keys]
 
 
+def api_key_fingerprint(api_key: str) -> str:
+    if not api_key:
+        return ""
+    return hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:12]
+
+
 def log_template_diagnostic(
     phone_number_id: str,
+    api_key: str,
+    base_url: str,
     template_name: str,
     language_code: str,
     body_order: str,
@@ -869,6 +878,8 @@ def log_template_diagnostic(
 ) -> None:
     diagnostic = {
         "phone_number_id": phone_number_id,
+        "key_fp": api_key_fingerprint(api_key),
+        "base_url": base_url,
         "template": template_name,
         "lang": language_code,
         "body_order": body_order,
@@ -1204,6 +1215,7 @@ def dispatch_whatsapp_messages(
         raise AppError("Falta KAPSO_API_KEY para enviar por WhatsApp.")
     if not phone_number_id:
         raise AppError("Falta KAPSO_PHONE_NUMBER_ID para enviar por WhatsApp.")
+    base_url = (os.getenv("KAPSO_BASE_URL") or "https://api.kapso.ai/meta/whatsapp/v24.0").rstrip("/")
 
     if whatsapp_templates_enabled():
         default_language = (os.getenv("KAPSO_TEMPLATE_LANGUAGE") or "es_AR").strip()
@@ -1248,6 +1260,8 @@ def dispatch_whatsapp_messages(
             body_parameters = build_template_body_parameters(participant_body_order, participant_context)
             log_template_diagnostic(
                 phone_number_id=phone_number_id,
+                api_key=api_key,
+                base_url=base_url,
                 template_name=participant_template_name,
                 language_code=participant_language,
                 body_order=participant_body_order,
@@ -1290,6 +1304,8 @@ def dispatch_whatsapp_messages(
 
         log_template_diagnostic(
             phone_number_id=phone_number_id,
+            api_key=api_key,
+            base_url=base_url,
             template_name=admin_template_name,
             language_code=admin_language,
             body_order=admin_body_order,
