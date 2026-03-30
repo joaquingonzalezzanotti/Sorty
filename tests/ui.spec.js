@@ -102,12 +102,13 @@ test.describe("Reglas de sorteo", () => {
     await expect(page.getByText("Agrega nombre, numero de WhatsApp y marca un Administrador")).toBeVisible();
 
     await page.fill("#name", "Uno");
-    await page.fill("#email", "12345");
+    await page.selectOption("#phone-country", "54");
+    await page.fill("#phone-local", "12345");
     await page.locator("#admin-wrapper").click();
     await addBtn.click();
     await expect(page.getByText("Numero invalido. Usa formato internacional E.164, por ejemplo +5491122334455.")).toBeVisible();
 
-    await page.fill("#email", "+5491122334455");
+    await page.fill("#phone-local", "91122334455");
     await addBtn.click();
     await expect(page.locator("#participants-body tr")).toHaveCount(1);
   });

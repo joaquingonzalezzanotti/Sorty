@@ -23,6 +23,10 @@ const adminWrapper = document.getElementById("admin-wrapper");
 const cancelEditBtn = document.getElementById("cancel-edit");
 const nameInput = document.getElementById("name");
 const contactInput = document.getElementById("email");
+const emailContactField = document.getElementById("email-contact-field");
+const whatsappContactField = document.getElementById("whatsapp-contact-field");
+const phoneCountrySelect = document.getElementById("phone-country");
+const phoneLocalInput = document.getElementById("phone-local");
 const contactLabel = document.getElementById("contact-label");
 const participantsTitle = document.getElementById("participants-title");
 const participantsContactHeader = document.getElementById("participants-contact-header");
@@ -53,6 +57,19 @@ const themeKey = "sorty-theme";
 const initialTheme = localStorage.getItem(themeKey) || "light";
 const deadlinePattern = /^(\d{1,2})[/-](\d{1,2})([/-](\d{2,4}))?$/;
 const whatsappPattern = /^\+[1-9]\d{7,14}$/;
+const defaultWhatsAppCountryDial = "54";
+const whatsappCountryOptions = [
+  { code: "AR", dial: "54", label: "Argentina (+54)" },
+  { code: "US", dial: "1", label: "Estados Unidos (+1)" },
+  { code: "CL", dial: "56", label: "Chile (+56)" },
+  { code: "CO", dial: "57", label: "Colombia (+57)" },
+  { code: "MX", dial: "52", label: "Mexico (+52)" },
+  { code: "PE", dial: "51", label: "Peru (+51)" },
+  { code: "UY", dial: "598", label: "Uruguay (+598)" },
+  { code: "PY", dial: "595", label: "Paraguay (+595)" },
+  { code: "BO", dial: "591", label: "Bolivia (+591)" },
+  { code: "ES", dial: "34", label: "Espana (+34)" },
+];
 
 let exclusionsOpen = false;
 let adminResolve = null;
@@ -66,15 +83,15 @@ function channelConfig(channel) {
   if (channel === "whatsapp") {
     return {
       title: "Agrega nombre, numero de WhatsApp y marca un Administrador",
-      contactLabel: "Numero de WhatsApp",
+      contactLabel: "WhatsApp",
       contactHeader: "WhatsApp",
-      placeholder: "+5491122334455",
+      placeholder: "1122334455",
       sendLabel: "Enviar WhatsApp",
       sendingText: "Enviando mensajes de WhatsApp...",
       successText: "Mensajes de WhatsApp enviados",
       successToast: "Mensajes de WhatsApp enviados.",
       simulationToast: "Simulacion lista para WhatsApp.",
-      missingContactError: "Completa nombre y numero de WhatsApp.",
+      missingContactError: "Completa nombre, pais y numero de WhatsApp.",
       duplicateContactError: "Ese numero ya esta en la lista.",
     };
   }
@@ -94,21 +111,101 @@ function channelConfig(channel) {
   };
 }
 
+function renderWhatsAppCountries() {
+  if (!phoneCountrySelect) return;
+  phoneCountrySelect.innerHTML = "";
+  whatsappCountryOptions.forEach((country) => {
+    const option = document.createElement("option");
+    option.value = country.dial;
+    option.textContent = country.label;
+    phoneCountrySelect.appendChild(option);
+  });
+  phoneCountrySelect.value = defaultWhatsAppCountryDial;
+}
+
+function resetWhatsAppFields() {
+  if (phoneCountrySelect) {
+    phoneCountrySelect.value = defaultWhatsAppCountryDial;
+  }
+  if (phoneLocalInput) {
+    phoneLocalInput.value = "";
+  }
+}
+
+function buildWhatsAppRawContact() {
+  const countryDial = (phoneCountrySelect?.value || "").replace(/\D/g, "");
+  const localRaw = (phoneLocalInput?.value || "").trim();
+  if (!countryDial || !localRaw) {
+    return { ok: false, value: "", error: "Completa pais y numero de WhatsApp." };
+  }
+
+  if (localRaw.includes("@")) {
+    return { ok: false, value: "", error: "Para WhatsApp ingresa solo numeros, sin @ ni email." };
+  }
+
+  if (localRaw.startsWith("+") || localRaw.startsWith("00")) {
+    return { ok: true, value: localRaw };
+  }
+
+  const localDigits = localRaw.replace(/\D/g, "");
+  if (!localDigits) {
+    return { ok: false, value: "", error: "Para WhatsApp ingresa solo numeros." };
+  }
+
+  return { ok: true, value: `+${countryDial}${localDigits}` };
+}
+
+function splitWhatsAppByCountry(contact) {
+  const normalized = (contact || "").trim();
+  const sorted = [...whatsappCountryOptions].sort((a, b) => b.dial.length - a.dial.length);
+  const match = sorted.find((country) => normalized.startsWith(`+${country.dial}`));
+  if (match) {
+    return {
+      dial: match.dial,
+      local: normalized.slice(match.dial.length + 1),
+    };
+  }
+  return {
+    dial: defaultWhatsAppCountryDial,
+    local: normalized,
+  };
+}
+
 function applyChannelUI() {
   const cfg = channelConfig(state.channel);
   if (participantsTitle) participantsTitle.textContent = cfg.title;
   if (contactLabel) contactLabel.textContent = cfg.contactLabel;
   if (participantsContactHeader) participantsContactHeader.textContent = cfg.contactHeader;
+  const isWhatsApp = state.channel === "whatsapp";
+  if (emailContactField) emailContactField.classList.toggle("hidden", isWhatsApp);
+  if (whatsappContactField) whatsappContactField.classList.toggle("hidden", !isWhatsApp);
   if (contactInput) {
-    contactInput.type = state.channel === "email" ? "email" : "text";
-    contactInput.placeholder = cfg.placeholder;
-    contactInput.setAttribute("inputmode", state.channel === "email" ? "email" : "tel");
+    contactInput.type = "email";
+    contactInput.placeholder = "ejemplo@mail.com";
+    contactInput.setAttribute("inputmode", "email");
+    contactInput.required = !isWhatsApp;
+    contactInput.disabled = isWhatsApp;
+  }
+  if (phoneLocalInput) {
+    phoneLocalInput.placeholder = cfg.placeholder;
+    phoneLocalInput.required = isWhatsApp;
+    phoneLocalInput.disabled = !isWhatsApp;
+    phoneLocalInput.setAttribute("inputmode", "tel");
+  }
+  if (phoneCountrySelect) {
+    phoneCountrySelect.disabled = !isWhatsApp;
   }
   if (sendBtn) sendBtn.textContent = cfg.sendLabel;
 }
 
 function normalizeWhatsApp(value) {
   let raw = (value || "").trim();
+  if (raw.includes("@")) {
+    return {
+      ok: false,
+      error: "Para WhatsApp ingresa solo numeros, sin @ ni email.",
+    };
+  }
   if (raw.startsWith("00")) {
     raw = "+" + raw.slice(2);
   }
@@ -354,7 +451,11 @@ participantForm.addEventListener("submit", (e) => {
   e.preventDefault();
   const cfg = channelConfig(state.channel);
   const name = (nameInput?.value || "").trim();
-  const rawContact = (contactInput?.value || "").trim();
+  const whatsappRawResult = state.channel === "whatsapp" ? buildWhatsAppRawContact() : null;
+  const rawContact =
+    state.channel === "whatsapp"
+      ? (whatsappRawResult?.value || "")
+      : (contactInput?.value || "").trim();
   const normalized = normalizeContact(state.channel, rawContact);
 
   const isEditing = Boolean(state.editingId);
@@ -363,7 +464,15 @@ participantForm.addEventListener("submit", (e) => {
   const canBeAdmin = !hasOtherAdmin;
   const isAdmin = canBeAdmin && adminCheckbox.checked;
 
-  if (!name || !rawContact) {
+  if (!name) {
+    showToast(cfg.missingContactError, "error");
+    return;
+  }
+  if (state.channel === "whatsapp" && whatsappRawResult && !whatsappRawResult.ok) {
+    showToast(whatsappRawResult.error, "error");
+    return;
+  }
+  if (!rawContact) {
     showToast(cfg.missingContactError, "error");
     return;
   }
@@ -851,6 +960,7 @@ function resetAppState() {
 function resetForm(options = {}) {
   const { skipFocus = false } = options;
   participantForm.reset();
+  resetWhatsAppFields();
   state.editingId = null;
   submitBtn.textContent = "Agregar";
   cancelEditBtn.classList.add("hidden");
@@ -869,7 +979,13 @@ function startEdit(id) {
   if (!target) return;
   state.editingId = id;
   nameInput.value = target.name;
-  contactInput.value = target.email;
+  if (state.channel === "whatsapp") {
+    const parts = splitWhatsAppByCountry(target.email);
+    if (phoneCountrySelect) phoneCountrySelect.value = parts.dial;
+    if (phoneLocalInput) phoneLocalInput.value = parts.local;
+  } else {
+    contactInput.value = target.email;
+  }
   adminCheckbox.checked = target.is_admin;
   submitBtn.textContent = "Guardar cambios";
   cancelEditBtn.classList.remove("hidden");
@@ -914,6 +1030,8 @@ if (selectedInput) {
   state.channel = selectedInput.value;
 }
 
+renderWhatsAppCountries();
+resetWhatsAppFields();
 renderParticipants();
 renderExclusions();
 renderTheme();
