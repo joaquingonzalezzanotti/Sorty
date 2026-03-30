@@ -37,7 +37,7 @@ Sorty es una app web para organizar sorteos de amigo invisible con un flujo simp
 
 - Python + Flask
 - Flask-SQLAlchemy
-- PostgreSQL (Neon/Vercel) o SQLite local como fallback
+- PostgreSQL (Neon/Vercel) en production; SQLite solo para desarrollo local
 - Frontend server-rendered (Jinja + CSS + JS vanilla)
 - Deploy en Vercel (`api/index.py` expone la app WSGI)
 
@@ -65,8 +65,13 @@ Sorty es una app web para organizar sorteos de amigo invisible con un flujo simp
 - `KAPSO_TEMPLATE_PARTICIPANT_LANGUAGE` (opcional; pisa idioma general para participante)
 - `KAPSO_TEMPLATE_ADMIN_LANGUAGE` (opcional; pisa idioma general para admin)
 - `KAPSO_TEMPLATE_PARTICIPANT_BODY_ORDER` (opcional; por defecto `giver_name,receiver_name,budget,deadline,note,admin_name`)
-- `KAPSO_TEMPLATE_ADMIN_BODY_ORDER` (opcional; por defecto `code,budget,deadline,note`)
+- `KAPSO_TEMPLATE_ADMIN_BODY_ORDER` (opcional; por defecto `code`)
 - `KAPSO_TEMPLATE_ADMIN_BUTTON_INDEX` (opcional; si tu template de admin tiene boton URL dinamico, ej `0`)
 - `KAPSO_TEMPLATE_ADMIN_BUTTON_VALUE_SOURCE=draw_link|code|env` (opcional; por defecto `draw_link`)
 - `KAPSO_TEMPLATE_ADMIN_BUTTON_VALUE` (opcional; usado cuando `...VALUE_SOURCE=env`)
+
+## Notas de datos
+
+- El contacto del administrador se modela como `admin_contact` (campo fisico legacy: `email_admin`).
+- En `VERCEL_ENV=production`, la app falla al iniciar si faltan `DATABASE_URL/POSTGRES_*` (no usa fallback SQLite).
 

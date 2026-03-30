@@ -45,6 +45,12 @@ def resolve_database_uri() -> str:
     for uri in candidates:
         if uri:
             return normalize(uri)
+    vercel_env = (os.getenv("VERCEL_ENV") or "").strip().lower()
+    if vercel_env == "production":
+        raise RuntimeError(
+            "Falta DATABASE_URL/POSTGRES_* en production. "
+            "Configura Postgres en Vercel para evitar fallback a SQLite."
+        )
     return "sqlite:///sorty.db"
 
 
@@ -875,13 +881,18 @@ def log_template_diagnostic(
     phone_number_id: str,
     api_key: str,
     base_url: str,
+    role: str,
     template_name: str,
     language_code: str,
     body_order: str,
     to_contact: str,
     body_parameters: List[str],
+    button_index: Optional[str] = None,
+    button_value_source: Optional[str] = None,
+    button_url_parameter: Optional[str] = None,
 ) -> None:
     diagnostic = {
+        "role": role,
         "phone_number_id": phone_number_id,
         "key_fp": api_key_fingerprint(api_key),
         "base_url": base_url,
@@ -891,6 +902,12 @@ def log_template_diagnostic(
         "to": phone_to_wa_id(to_contact),
         "body_parameters": body_parameters,
     }
+    if button_index is not None:
+        diagnostic["button_index"] = button_index
+    if button_value_source is not None:
+        diagnostic["button_value_source"] = button_value_source
+    if button_url_parameter is not None:
+        diagnostic["button_url_parameter"] = button_url_parameter
     app.logger.info("KAPSO_TEMPLATE_DIAGNOSTIC %s", json.dumps(diagnostic, ensure_ascii=False))
 
 
@@ -1238,7 +1255,7 @@ def dispatch_whatsapp_messages(
             os.getenv("KAPSO_TEMPLATE_PARTICIPANT_BODY_ORDER")
             or "giver_name,receiver_name,budget,deadline,note,admin_name"
         ).strip()
-        admin_body_order = (os.getenv("KAPSO_TEMPLATE_ADMIN_BODY_ORDER") or "code,budget,deadline,note").strip()
+        admin_body_order = (os.getenv("KAPSO_TEMPLATE_ADMIN_BODY_ORDER") or "code").strip()
         admin_button_index = (os.getenv("KAPSO_TEMPLATE_ADMIN_BUTTON_INDEX") or "").strip()
         admin_button_value_source = (os.getenv("KAPSO_TEMPLATE_ADMIN_BUTTON_VALUE_SOURCE") or "draw_link").strip().lower()
 
@@ -1248,6 +1265,10 @@ def dispatch_whatsapp_messages(
             raise AppError("Falta KAPSO_TEMPLATE_ADMIN_NAME.")
         if not participant_language or not admin_language:
             raise AppError("Falta idioma de template. Define KAPSO_TEMPLATE_LANGUAGE (ej. es_AR).")
+        if admin_button_index and not admin_button_index.isdigit():
+            raise AppError("KAPSO_TEMPLATE_ADMIN_BUTTON_INDEX debe ser numerico (ej. 0).")
+        if admin_button_value_source not in {"draw_link", "code", "env"}:
+            raise AppError("KAPSO_TEMPLATE_ADMIN_BUTTON_VALUE_SOURCE invalido. Usa draw_link, code o env.")
 
         shared_context = {
             "budget": template_value(meta.get("budget")),
@@ -1273,6 +1294,7 @@ def dispatch_whatsapp_messages(
                 phone_number_id=phone_number_id,
                 api_key=api_key,
                 base_url=base_url,
+                role="participant",
                 template_name=participant_template_name,
                 language_code=participant_language,
                 body_order=participant_body_order,
@@ -1312,16 +1334,22 @@ def dispatch_whatsapp_messages(
                 admin_button_parameter = template_value(admin_link)
             else:
                 admin_button_parameter = template_value(os.getenv("KAPSO_TEMPLATE_ADMIN_BUTTON_VALUE"))
+            if admin_button_value_source == "env" and not (os.getenv("KAPSO_TEMPLATE_ADMIN_BUTTON_VALUE") or "").strip():
+                raise AppError("Falta KAPSO_TEMPLATE_ADMIN_BUTTON_VALUE para boton dinamico de admin.")
 
         log_template_diagnostic(
             phone_number_id=phone_number_id,
             api_key=api_key,
             base_url=base_url,
+            role="admin",
             template_name=admin_template_name,
             language_code=admin_language,
             body_order=admin_body_order,
             to_contact=admin["email"],
             body_parameters=admin_body_parameters,
+            button_index=admin_button_index,
+            button_value_source=admin_button_value_source,
+            button_url_parameter=admin_button_parameter,
         )
         try:
             kapso_send_template(
@@ -1477,22 +1505,32 @@ def build_sorteo_link(sorteo: Sorteo) -> str:
 def load_draw_data(code: str) -> Tuple[Sorteo, dict]:
     """Fetch draw data (participants, exclusions, assignments) by code or UUID."""
     ensure_database_schema()
+    raw_code = (code or "").strip()
+    if "{{" in raw_code or "}}" in raw_code:
+        raise AppError(
+            "El link recibido contiene un placeholder sin reemplazar ({{1}}). "
+            "Actualiza el template de WhatsApp para usar boton URL dinamico."
+        )
+
+    normalized_code = re.sub(r"[^A-Za-z0-9]", "", raw_code).upper()
     query = Sorteo.query.options(
         joinedload(Sorteo.participantes).joinedload(Participante.exclusiones),
         joinedload(Sorteo.asignaciones).joinedload(Asignacion.giver),
         joinedload(Sorteo.asignaciones).joinedload(Asignacion.receiver),
     )
 
-    sorteo = query.filter(Sorteo.code == code).first()
+    sorteo = query.filter(Sorteo.code == raw_code).first()
+    if not sorteo and normalized_code and normalized_code != raw_code:
+        sorteo = query.filter(Sorteo.code == normalized_code).first()
     if not sorteo:
         try:
-            sorteo = query.filter(Sorteo.public_id == uuid.UUID(code)).first()
+            sorteo = query.filter(Sorteo.public_id == uuid.UUID(raw_code)).first()
         except ValueError:
             sorteo = None
     if not sorteo:
         raise AppError("Sorteo no encontrado.")
 
-    channel = infer_channel_from_contact(sorteo.email_admin)
+    channel = infer_channel_from_contact(sorteo.admin_contact)
     participants = []
     for p in sorteo.participantes:
         participants.append(
@@ -1501,7 +1539,7 @@ def load_draw_data(code: str) -> Tuple[Sorteo, dict]:
                 "name": p.nombre,
                 "email": p.email,
                 "contact": p.email,
-                "is_admin": p.email.lower() == sorteo.email_admin.lower(),
+                "is_admin": p.email.lower() == sorteo.admin_contact.lower(),
             }
         )
     participant_by_email = {p["email"]: p for p in participants}
@@ -1529,8 +1567,8 @@ def load_draw_data(code: str) -> Tuple[Sorteo, dict]:
         "code": sorteo.code,
         "name": sorteo.nombre,
         "channel": channel,
-        "email_admin": sorteo.email_admin,
-        "admin_contact": sorteo.email_admin,
+        "email_admin": sorteo.admin_contact,
+        "admin_contact": sorteo.admin_contact,
         "participants": participants,
         "exclusions": exclusions,
         "assignments": [
@@ -1553,7 +1591,7 @@ def load_draw_data(code: str) -> Tuple[Sorteo, dict]:
 
 
 def update_participant_contact(sorteo: Sorteo, participant_id: int, new_contact: str, notify_previous: bool) -> dict:
-    draw_channel = infer_channel_from_contact(sorteo.email_admin)
+    draw_channel = infer_channel_from_contact(sorteo.admin_contact)
     new_contact_norm = normalize_contact(new_contact, draw_channel)
 
     participant = next((p for p in sorteo.participantes if p.id == participant_id), None)
@@ -1569,8 +1607,8 @@ def update_participant_contact(sorteo: Sorteo, participant_id: int, new_contact:
     participant.email = new_contact_norm
 
     admin_contact_updated = False
-    if sorteo.email_admin.lower() == old_contact.lower():
-        sorteo.email_admin = new_contact_norm
+    if sorteo.admin_contact.lower() == old_contact.lower():
+        sorteo.admin_contact = new_contact_norm
         admin_contact_updated = True
 
     db.session.commit()
@@ -1585,7 +1623,7 @@ def update_participant_contact(sorteo: Sorteo, participant_id: int, new_contact:
 
     notified = False
     if notify_previous and old_contact.lower() != new_contact_norm.lower() and draw_channel == "email":
-        admin_contact = f"{sorteo.nombre} ({sorteo.email_admin})"
+        admin_contact = f"{sorteo.nombre} ({sorteo.admin_contact})"
         subject = "Correccion de correo - Sorty"
         text_body = (
             f"Hola,\n\n"
@@ -1610,7 +1648,7 @@ def update_participant_contact(sorteo: Sorteo, participant_id: int, new_contact:
         "name": participant.nombre,
         "email": participant.email,
         "contact": participant.email,
-        "is_admin": participant.email.lower() == sorteo.email_admin.lower(),
+        "is_admin": participant.email.lower() == sorteo.admin_contact.lower(),
         "notified_previous": notified,
         "admin_email_updated": admin_contact_updated,
         "admin_contact_updated": admin_contact_updated,
@@ -1627,7 +1665,7 @@ def save_draw_to_db(
     admin = meta.get("admin") or next(p for p in participants if p["is_admin"])
     name = (meta.get("name") or "").strip() or f"Sorteo de {admin['name']}"
 
-    sorteo = Sorteo(nombre=name, email_admin=admin["email"], estado="finalizado")
+    sorteo = Sorteo(nombre=name, admin_contact=admin["email"], estado="finalizado")
     db.session.add(sorteo)
 
     by_email: Dict[str, Participante] = {}
@@ -1925,7 +1963,8 @@ def api_draw_resend(code: str):
     mode_override = (payload.get("mode") or "").strip().lower() or None
     try:
         sorteo, data = load_draw_data(code)
-        channel = normalize_channel(data.get("channel") or infer_channel_from_contact(data.get("email_admin") or ""))
+        admin_contact = data.get("admin_contact") or data.get("email_admin") or ""
+        channel = normalize_channel(data.get("channel") or infer_channel_from_contact(admin_contact))
         if mode_override:
             allowed_modes = {"console", "smtp"} if channel == "email" else {"console", "kapso"}
             if mode_override not in allowed_modes:
@@ -1984,7 +2023,8 @@ def api_draw_resend_participant(code: str, participant_id: int):
     mode_override = (payload.get("mode") or "").strip().lower() or None
     try:
         sorteo, data = load_draw_data(code)
-        channel = normalize_channel(data.get("channel") or infer_channel_from_contact(data.get("email_admin") or ""))
+        admin_contact = data.get("admin_contact") or data.get("email_admin") or ""
+        channel = normalize_channel(data.get("channel") or infer_channel_from_contact(admin_contact))
         if channel != "email":
             raise AppError("El reenvio individual solo esta disponible para sorteos por email.")
         if mode_override and mode_override not in {"console", "smtp"}:

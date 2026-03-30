@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import CheckConstraint, UniqueConstraint
+from sqlalchemy.orm import synonym
 
 db = SQLAlchemy()
 
@@ -30,7 +31,10 @@ class Sorteo(db.Model):
   code = db.Column(db.String(12), default=default_code, nullable=False, unique=True, index=True)
 
   nombre = db.Column(db.String(255), nullable=False)
-  email_admin = db.Column(db.String(320), nullable=False)  # sin encriptar
+  # Physical column remains `email_admin` for backward compatibility.
+  admin_contact = db.Column("email_admin", db.String(320), nullable=False)  # sin encriptar
+  # Transitional alias to avoid breaking existing code and queries.
+  email_admin = synonym("admin_contact")
   estado = db.Column(db.String(20), nullable=False, default="borrador")
 
   fecha_creacion = db.Column(db.DateTime(timezone=True), default=datetime.utcnow, nullable=False)
