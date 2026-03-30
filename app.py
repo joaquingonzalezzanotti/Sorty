@@ -1014,7 +1014,7 @@ def kapso_send_template(
         components.append(
             {
                 "type": "button",
-                "subtype": "url",
+                "sub_type": "url",
                 "index": button_index,
                 "parameters": [{"type": "text", "text": template_value(button_url_parameter)}],
             }
