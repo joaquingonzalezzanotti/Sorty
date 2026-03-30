@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="format-detection" content="telephone=no,email=no,address=no">
   <title>Sorty - Sorteo</title>
   <meta name="robots" content="noindex,nofollow,noarchive,nosnippet">
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='sorty_logo.png') }}">
@@ -68,9 +69,19 @@
               <tbody>
                 {% for a in data.assignments %}
                 <tr data-giver-id="{{ a.giver_id }}">
-                  <td>{{ a.giver_name }} ({{ a.giver_contact or a.giver_email }})</td>
-                  <td>{{ a.receiver_name }} ({{ a.receiver_contact or a.receiver_email }})</td>
-                  <td>
+                  <td class="cell-giver" data-label="Entrega">
+                    <div class="assignment-person">
+                      <strong>{{ a.giver_name }}</strong>
+                      <span class="contact-text">{{ a.giver_contact or a.giver_email }}</span>
+                    </div>
+                  </td>
+                  <td class="cell-receiver" data-label="Para">
+                    <div class="assignment-person">
+                      <strong>{{ a.receiver_name }}</strong>
+                      <span class="contact-text">{{ a.receiver_contact or a.receiver_email }}</span>
+                    </div>
+                  </td>
+                  <td class="cell-status" data-label="Estado">
                     {% if a.email_status == "sent" %}
                       <span class="status-pill status-sent">Enviado</span>
                     {% elif a.email_status == "error" %}
@@ -79,7 +90,7 @@
                       <span class="status-pill status-muted">Sin datos</span>
                     {% endif %}
                   </td>
-                  <td>
+                  <td class="cell-actions" data-label="Acciones">
                     {% if data.channel == "email" %}
                     <button class="button ghost sm resend-single" data-participant-id="{{ a.giver_id }}">Reenviar</button>
                     {% else %}
@@ -106,7 +117,7 @@
                   <span class="name">{{ p.name }}</span>
                   {% if p.is_admin %}<span class="tag">Admin</span>{% endif %}
                 </div>
-                <div class="muted email">{{ p.contact or p.email }}</div>
+                <div class="muted email contact-text">{{ p.contact or p.email }}</div>
               </div>
               <div class="participant-actions">
                 <input
@@ -116,7 +127,7 @@
                   class="input sm email-input"
                   disabled
                 >
-                <label class="inline-checkbox">
+                <label class="inline-checkbox notify-previous">
                   <input type="checkbox" data-notify-id="{{ p.id }}" disabled> Notificar contacto anterior
                 </label>
                 <div class="action-buttons">
