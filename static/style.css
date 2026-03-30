@@ -537,6 +537,12 @@ textarea:focus {
   border-color: rgba(14, 165, 233, 0.7);
 }
 
+.phone-combo {
+  display: grid;
+  grid-template-columns: minmax(170px, 0.75fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
 .check {
   display: inline-flex;
   align-items: center;
@@ -615,6 +621,10 @@ textarea:focus {
 }
 
 @media (max-width: 780px) {
+  .phone-combo {
+    grid-template-columns: 1fr;
+  }
+
   #admin-wrapper {
     width: 100%;
     max-width: 100%;

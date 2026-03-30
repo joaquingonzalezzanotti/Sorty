@@ -97,9 +97,16 @@
           <span>Nombre</span>
           <input type="text" id="name" placeholder="Ej: Sofia Perez" required>
         </label>
-        <label>
+        <label id="email-contact-field">
           <span id="contact-label">Email</span>
           <input type="email" id="email" placeholder="ejemplo@mail.com" required>
+        </label>
+        <label id="whatsapp-contact-field" class="hidden">
+          <span>WhatsApp</span>
+          <div class="phone-combo">
+            <select id="phone-country" aria-label="Prefijo de pais"></select>
+            <input type="tel" id="phone-local" placeholder="1122334455" inputmode="tel" autocomplete="tel-national">
+          </div>
         </label>
         <label class="check" id="admin-wrapper">
           <span class="check-text">Administrador</span>
