@@ -1287,7 +1287,7 @@ def dispatch_whatsapp_messages(
     if whatsapp_templates_enabled():
         default_language = (os.getenv("KAPSO_TEMPLATE_LANGUAGE") or "es_AR").strip()
         participant_template_name = (os.getenv("KAPSO_TEMPLATE_PARTICIPANT_NAME") or "amigo_invisible_confirmacion").strip()
-        admin_template_name = (os.getenv("KAPSO_TEMPLATE_ADMIN_NAME") or "amigo_invisible_results").strip()
+        admin_template_name = (os.getenv("KAPSO_TEMPLATE_ADMIN_NAME") or "amigo_invisible_resultados").strip()
         participant_language = (os.getenv("KAPSO_TEMPLATE_PARTICIPANT_LANGUAGE") or default_language).strip()
         admin_language = (os.getenv("KAPSO_TEMPLATE_ADMIN_LANGUAGE") or default_language).strip()
         participant_body_order = (

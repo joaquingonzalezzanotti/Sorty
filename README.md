@@ -61,7 +61,7 @@ Sorty es una app web para organizar sorteos de amigo invisible con un flujo simp
 - `WHATSAPP_USE_TEMPLATES=1|0` (por defecto `1`; en `kapso` envia `type: template`)
 - `KAPSO_TEMPLATE_LANGUAGE` (por defecto `es_AR`)
 - `KAPSO_TEMPLATE_PARTICIPANT_NAME` (por defecto `amigo_invisible_confirmacion`)
-- `KAPSO_TEMPLATE_ADMIN_NAME` (por defecto `amigo_invisible_results`)
+- `KAPSO_TEMPLATE_ADMIN_NAME` (por defecto `amigo_invisible_resultados`)
 - `KAPSO_TEMPLATE_PARTICIPANT_LANGUAGE` (opcional; pisa idioma general para participante)
 - `KAPSO_TEMPLATE_ADMIN_LANGUAGE` (opcional; pisa idioma general para admin)
 - `KAPSO_TEMPLATE_PARTICIPANT_BODY_ORDER` (opcional; por defecto `giver_name,receiver_name,budget,deadline,note,admin_name`)
