@@ -910,6 +910,23 @@ def build_template_body_parameters(order: str, context: Dict[str, str]) -> List[
     return [template_value(context.get(key)) for key in keys]
 
 
+def parse_template_body_order(order: str) -> List[str]:
+    return [item.strip() for item in (order or "").split(",") if item.strip()]
+
+
+def validate_template_body_order(order: str, allowed_keys: Set[str], env_name: str) -> List[str]:
+    keys = parse_template_body_order(order)
+    if not keys:
+        raise AppError(f"Falta {env_name}.")
+    unknown_keys = [key for key in keys if key not in allowed_keys]
+    if unknown_keys:
+        raise AppError(
+            f"{env_name} contiene claves invalidas: {', '.join(unknown_keys)}. "
+            f"Permitidas: {', '.join(sorted(allowed_keys))}."
+        )
+    return keys
+
+
 def api_key_fingerprint(api_key: str) -> str:
     if not api_key:
         return ""
@@ -1032,6 +1049,132 @@ def kapso_send_template(
         },
     }
     return kapso_post_message(phone_number_id=phone_number_id, api_key=api_key, payload=payload)
+
+
+def build_whatsapp_template_send_plan(
+    participants: List[dict],
+    assignments: Dict[str, str],
+    by_email: Dict[str, dict],
+    admin: dict,
+    meta: dict,
+    admin_link: Optional[str],
+    participant_template_name: str,
+    participant_language: str,
+    participant_body_order: str,
+    admin_template_name: str,
+    admin_language: str,
+    admin_body_order: str,
+    admin_button_index: str,
+    admin_button_value_source: str,
+) -> List[dict]:
+    shared_context = {
+        "budget": template_value(meta.get("budget")),
+        "deadline": template_value(meta.get("deadline")),
+        "note": template_value(meta.get("note")),
+        "code": template_value(meta.get("code")),
+        "admin_name": template_value(admin.get("name")),
+        "admin_contact": template_value(admin.get("email")),
+        "draw_link": template_value(admin_link),
+    }
+
+    allowed_template_keys = {
+        "giver_name",
+        "receiver_name",
+        "receiver_contact",
+        "budget",
+        "deadline",
+        "note",
+        "code",
+        "admin_name",
+        "admin_contact",
+        "draw_link",
+    }
+    validate_template_body_order(
+        participant_body_order,
+        allowed_keys=allowed_template_keys,
+        env_name="KAPSO_TEMPLATE_PARTICIPANT_BODY_ORDER",
+    )
+    validate_template_body_order(
+        admin_body_order,
+        allowed_keys=allowed_template_keys,
+        env_name="KAPSO_TEMPLATE_ADMIN_BODY_ORDER",
+    )
+
+    admin_button_parameter = None
+    if admin_button_index:
+        if admin_button_value_source == "code":
+            raw_code = (meta.get("code") or "").strip()
+            if not raw_code:
+                raise AppError("Falta codigo del sorteo para boton admin dinamico (KAPSO_TEMPLATE_ADMIN_BUTTON_VALUE_SOURCE=code).")
+            admin_button_parameter = raw_code
+        elif admin_button_value_source == "draw_link":
+            raw_draw_link = (admin_link or "").strip()
+            if not raw_draw_link:
+                raise AppError(
+                    "Falta link del sorteo para boton admin dinamico (KAPSO_TEMPLATE_ADMIN_BUTTON_VALUE_SOURCE=draw_link)."
+                )
+            admin_button_parameter = raw_draw_link
+        else:
+            raw_env_button_value = (os.getenv("KAPSO_TEMPLATE_ADMIN_BUTTON_VALUE") or "").strip()
+            if not raw_env_button_value:
+                raise AppError("Falta KAPSO_TEMPLATE_ADMIN_BUTTON_VALUE para boton dinamico de admin.")
+            admin_button_parameter = raw_env_button_value
+
+    send_plan: List[dict] = []
+
+    admin_context = {
+        **shared_context,
+        "receiver_name": "-",
+        "receiver_contact": "-",
+        "giver_name": template_value(admin.get("name")),
+    }
+    admin_body_parameters = build_template_body_parameters(admin_body_order, admin_context)
+    send_plan.append(
+        {
+            "role": "admin",
+            "recipient_name": admin["name"],
+            "to_contact": admin["email"],
+            "template_name": admin_template_name,
+            "language_code": admin_language,
+            "body_order": admin_body_order,
+            "body_parameters": admin_body_parameters,
+            "button_index": admin_button_index or None,
+            "button_value_source": admin_button_value_source if admin_button_index else None,
+            "button_url_parameter": template_value(admin_button_parameter) if admin_button_parameter is not None else None,
+        }
+    )
+
+    for giver in participants:
+        receiver_email = assignments.get(giver["email"])
+        receiver = by_email.get(receiver_email or "")
+        if not receiver:
+            raise AppError(
+                f"Asignacion invalida para participante '{giver['name']}'. Falta receptor valido."
+            )
+
+        participant_context = {
+            **shared_context,
+            "giver_name": template_value(giver.get("name")),
+            "receiver_name": template_value(receiver.get("name")),
+            "receiver_contact": template_value(receiver.get("email")),
+        }
+        body_parameters = build_template_body_parameters(participant_body_order, participant_context)
+        send_plan.append(
+            {
+                "role": "participant",
+                "recipient_name": giver["name"],
+                "to_contact": giver["email"],
+                "template_name": participant_template_name,
+                "language_code": participant_language,
+                "body_order": participant_body_order,
+                "body_parameters": body_parameters,
+                "button_index": None,
+                "button_value_source": None,
+                "button_url_parameter": None,
+            }
+        )
+
+    return send_plan
 
 
 def dispatch_emails(
@@ -1309,106 +1452,65 @@ def dispatch_whatsapp_messages(
         if admin_button_value_source not in {"draw_link", "code", "env"}:
             raise AppError("KAPSO_TEMPLATE_ADMIN_BUTTON_VALUE_SOURCE invalido. Usa draw_link, code o env.")
 
-        shared_context = {
-            "budget": template_value(meta.get("budget")),
-            "deadline": template_value(meta.get("deadline")),
-            "note": template_value(meta.get("note")),
-            "code": template_value(meta.get("code")),
-            "admin_name": template_value(admin.get("name")),
-            "admin_contact": template_value(admin.get("email")),
-            "draw_link": template_value(admin_link),
-        }
+        send_plan = build_whatsapp_template_send_plan(
+            participants=participants,
+            assignments=assignments,
+            by_email=by_email,
+            admin=admin,
+            meta=meta,
+            admin_link=admin_link,
+            participant_template_name=participant_template_name,
+            participant_language=participant_language,
+            participant_body_order=participant_body_order,
+            admin_template_name=admin_template_name,
+            admin_language=admin_language,
+            admin_body_order=admin_body_order,
+            admin_button_index=admin_button_index,
+            admin_button_value_source=admin_button_value_source,
+        )
 
         sent_count = 0
-        for giver in participants:
-            receiver = by_email[assignments[giver["email"]]]
-            participant_context = {
-                **shared_context,
-                "giver_name": template_value(giver.get("name")),
-                "receiver_name": template_value(receiver.get("name")),
-                "receiver_contact": template_value(receiver.get("email")),
-            }
-            body_parameters = build_template_body_parameters(participant_body_order, participant_context)
+        for item in send_plan:
             log_template_diagnostic(
                 phone_number_id=phone_number_id,
                 api_key=api_key,
                 base_url=base_url,
-                role="participant",
-                template_name=participant_template_name,
-                language_code=participant_language,
-                body_order=participant_body_order,
-                to_contact=giver["email"],
-                body_parameters=body_parameters,
+                role=item["role"],
+                template_name=item["template_name"],
+                language_code=item["language_code"],
+                body_order=item["body_order"],
+                to_contact=item["to_contact"],
+                body_parameters=item["body_parameters"],
+                button_index=item.get("button_index"),
+                button_value_source=item.get("button_value_source"),
+                button_url_parameter=item.get("button_url_parameter"),
             )
             try:
                 kapso_send_template(
                     phone_number_id=phone_number_id,
                     api_key=api_key,
-                    to_contact=giver["email"],
-                    template_name=participant_template_name,
-                    language_code=participant_language,
-                    body_parameters=body_parameters,
+                    to_contact=item["to_contact"],
+                    template_name=item["template_name"],
+                    language_code=item["language_code"],
+                    body_parameters=item["body_parameters"],
+                    button_url_parameter=item.get("button_url_parameter"),
+                    button_index=item.get("button_index") or "0",
                 )
             except AppError as exc:
+                if item["role"] == "admin":
+                    raise AppError(
+                        f"Fallo envio WhatsApp al Administrador '{item['recipient_name']}' ({item['to_contact']}). {exc.message}",
+                        code=exc.code,
+                        hint=exc.hint,
+                        source=exc.source,
+                    ) from exc
                 raise AppError(
-                    f"Fallo envio WhatsApp a participante '{giver['name']}' ({giver['email']}). {exc.message}",
+                    f"Fallo envio WhatsApp a participante '{item['recipient_name']}' ({item['to_contact']}). {exc.message}",
                     code=exc.code,
                     hint=exc.hint,
                     source=exc.source,
                 ) from exc
             sent_count += 1
-
-        admin_context = {
-            **shared_context,
-            "receiver_name": "-",
-            "receiver_contact": "-",
-            "giver_name": template_value(admin.get("name")),
-        }
-        admin_body_parameters = build_template_body_parameters(admin_body_order, admin_context)
-        admin_button_parameter = None
-        if admin_button_index:
-            if admin_button_value_source == "code":
-                admin_button_parameter = template_value(meta.get("code"))
-            elif admin_button_value_source == "draw_link":
-                admin_button_parameter = template_value(admin_link)
-            else:
-                admin_button_parameter = template_value(os.getenv("KAPSO_TEMPLATE_ADMIN_BUTTON_VALUE"))
-            if admin_button_value_source == "env" and not (os.getenv("KAPSO_TEMPLATE_ADMIN_BUTTON_VALUE") or "").strip():
-                raise AppError("Falta KAPSO_TEMPLATE_ADMIN_BUTTON_VALUE para boton dinamico de admin.")
-
-        log_template_diagnostic(
-            phone_number_id=phone_number_id,
-            api_key=api_key,
-            base_url=base_url,
-            role="admin",
-            template_name=admin_template_name,
-            language_code=admin_language,
-            body_order=admin_body_order,
-            to_contact=admin["email"],
-            body_parameters=admin_body_parameters,
-            button_index=admin_button_index,
-            button_value_source=admin_button_value_source,
-            button_url_parameter=admin_button_parameter,
-        )
-        try:
-            kapso_send_template(
-                phone_number_id=phone_number_id,
-                api_key=api_key,
-                to_contact=admin["email"],
-                template_name=admin_template_name,
-                language_code=admin_language,
-                body_parameters=admin_body_parameters,
-                button_url_parameter=admin_button_parameter,
-                button_index=admin_button_index or "0",
-            )
-        except AppError as exc:
-            raise AppError(
-                f"Fallo envio WhatsApp al Administrador '{admin['name']}' ({admin['email']}). {exc.message}",
-                code=exc.code,
-                hint=exc.hint,
-                source=exc.source,
-            ) from exc
-        sent_count += 1
         return {"mode": mode, "sent": True, "emails": sent_count, "transport": "kapso-template"}
 
     sent_count = 0
