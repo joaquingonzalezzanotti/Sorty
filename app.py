@@ -917,12 +917,20 @@ def parse_template_body_order(order: str) -> List[str]:
 def validate_template_body_order(order: str, allowed_keys: Set[str], env_name: str) -> List[str]:
     keys = parse_template_body_order(order)
     if not keys:
-        raise AppError(f"Falta {env_name}.")
+        raise AppError(
+            f"Falta {env_name}.",
+            code="KAPSO_TEMPLATE_CONFIG",
+            hint=f"Define {env_name} con las variables del template en el orden exacto.",
+            source="kapso",
+        )
     unknown_keys = [key for key in keys if key not in allowed_keys]
     if unknown_keys:
         raise AppError(
             f"{env_name} contiene claves invalidas: {', '.join(unknown_keys)}. "
-            f"Permitidas: {', '.join(sorted(allowed_keys))}."
+            f"Permitidas: {', '.join(sorted(allowed_keys))}.",
+            code="KAPSO_TEMPLATE_CONFIG",
+            hint=f"Corrige {env_name} para que coincida con la plantilla aprobada en Kapso.",
+            source="kapso",
         )
     return keys
 
@@ -1105,19 +1113,32 @@ def build_whatsapp_template_send_plan(
         if admin_button_value_source == "code":
             raw_code = (meta.get("code") or "").strip()
             if not raw_code:
-                raise AppError("Falta codigo del sorteo para boton admin dinamico (KAPSO_TEMPLATE_ADMIN_BUTTON_VALUE_SOURCE=code).")
+                raise AppError(
+                    "Falta codigo del sorteo para boton admin dinamico (KAPSO_TEMPLATE_ADMIN_BUTTON_VALUE_SOURCE=code).",
+                    code="KAPSO_TEMPLATE_CONFIG",
+                    hint="Verifica que el sorteo se haya guardado antes de enviar y que el body_order admin incluya 'code' si corresponde.",
+                    source="kapso",
+                )
             admin_button_parameter = raw_code
         elif admin_button_value_source == "draw_link":
             raw_draw_link = (admin_link or "").strip()
             if not raw_draw_link:
                 raise AppError(
-                    "Falta link del sorteo para boton admin dinamico (KAPSO_TEMPLATE_ADMIN_BUTTON_VALUE_SOURCE=draw_link)."
+                    "Falta link del sorteo para boton admin dinamico (KAPSO_TEMPLATE_ADMIN_BUTTON_VALUE_SOURCE=draw_link).",
+                    code="KAPSO_TEMPLATE_CONFIG",
+                    hint="Define PUBLIC_APP_URL y valida que el codigo del sorteo exista para armar draw_link.",
+                    source="kapso",
                 )
             admin_button_parameter = raw_draw_link
         else:
             raw_env_button_value = (os.getenv("KAPSO_TEMPLATE_ADMIN_BUTTON_VALUE") or "").strip()
             if not raw_env_button_value:
-                raise AppError("Falta KAPSO_TEMPLATE_ADMIN_BUTTON_VALUE para boton dinamico de admin.")
+                raise AppError(
+                    "Falta KAPSO_TEMPLATE_ADMIN_BUTTON_VALUE para boton dinamico de admin.",
+                    code="KAPSO_TEMPLATE_CONFIG",
+                    hint="Configura KAPSO_TEMPLATE_ADMIN_BUTTON_VALUE o cambia KAPSO_TEMPLATE_ADMIN_BUTTON_VALUE_SOURCE.",
+                    source="kapso",
+                )
             admin_button_parameter = raw_env_button_value
 
     send_plan: List[dict] = []
@@ -1149,7 +1170,10 @@ def build_whatsapp_template_send_plan(
         receiver = by_email.get(receiver_email or "")
         if not receiver:
             raise AppError(
-                f"Asignacion invalida para participante '{giver['name']}'. Falta receptor valido."
+                f"Asignacion invalida para participante '{giver['name']}'. Falta receptor valido.",
+                code="WHATSAPP_PLAN_INVALID",
+                hint="Regenera el sorteo: se detecto una asignacion incompleta en preflight.",
+                source="sorty",
             )
 
         participant_context = {

@@ -1726,6 +1726,27 @@ th {
   gap: 10px;
 }
 
+.status-message {
+  min-height: 22px;
+  display: inline-flex;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.status-message.muted {
+  color: var(--muted);
+}
+
+.status-message.success {
+  color: #166534;
+}
+
+.status-message.error {
+  color: #b91c1c;
+}
+
 .notify-previous {
   max-width: 220px;
   line-height: 1.25;

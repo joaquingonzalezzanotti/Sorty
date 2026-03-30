@@ -53,7 +53,7 @@
         <div class="actions-row wrap">
           <button class="button ghost sm" id="copy-link">Copiar enlace</button>
           <button class="button primary sm" id="resend-btn">Reenviar mensajes</button>
-          <div id="action-msg" class="muted"></div>
+          <div id="action-msg" class="status-message muted"></div>
         </div>
 
         <div class="panel">
@@ -174,7 +174,7 @@
     function setMessage(text, cls = "") {
       if (!msg) return;
       msg.textContent = text;
-      msg.className = cls ? cls : "muted";
+      msg.className = `status-message ${cls || "muted"}`;
     }
 
     if (copyBtn) {
