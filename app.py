@@ -19,7 +19,7 @@ from typing import Dict, List, Optional, Set, Tuple
 from xml.sax.saxutils import escape as xml_escape
 
 from flask import Flask, Response, jsonify, redirect, render_template, request, send_from_directory
-from sqlalchemy import inspect
+from sqlalchemy import inspect, text
 from sqlalchemy.orm import joinedload
 
 from models import Asignacion, EmailEnvio, Participante, Sorteo, db
@@ -352,12 +352,51 @@ def infer_channel_from_contact(contact: str) -> str:
     return "email" if "@" in (contact or "") else "whatsapp"
 
 
+def apply_schema_compatibility_migrations() -> None:
+    inspector = inspect(db.engine)
+    if "sorteo" not in set(inspector.get_table_names()):
+        return
+
+    sorteo_columns = {column.get("name") for column in inspector.get_columns("sorteo")}
+    if "admin_contact" not in sorteo_columns:
+        with db.engine.begin() as connection:
+            connection.execute(text("ALTER TABLE sorteo ADD COLUMN admin_contact VARCHAR(320)"))
+            if "email_admin" in sorteo_columns:
+                connection.execute(
+                    text(
+                        "UPDATE sorteo "
+                        "SET admin_contact = email_admin "
+                        "WHERE (admin_contact IS NULL OR admin_contact = '') "
+                        "AND email_admin IS NOT NULL"
+                    )
+                )
+
+        app.logger.warning(
+            "DB_SCHEMA_COMPAT added missing sorteo.admin_contact column from legacy schema."
+        )
+        # Refresh column list after ALTER TABLE so fallback copy below has up-to-date metadata.
+        inspector = inspect(db.engine)
+        sorteo_columns = {column.get("name") for column in inspector.get_columns("sorteo")}
+
+    if "admin_contact" in sorteo_columns and "email_admin" in sorteo_columns:
+        with db.engine.begin() as connection:
+            connection.execute(
+                text(
+                    "UPDATE sorteo "
+                    "SET admin_contact = email_admin "
+                    "WHERE (admin_contact IS NULL OR admin_contact = '') "
+                    "AND email_admin IS NOT NULL"
+                )
+            )
+
+
 def ensure_database_schema() -> None:
     global _schema_initialized
     if _schema_initialized:
         return
     with app.app_context():
         db.create_all()
+        apply_schema_compatibility_migrations()
     _schema_initialized = True
 
 
