@@ -72,6 +72,6 @@ Sorty es una app web para organizar sorteos de amigo invisible con un flujo simp
 
 ## Notas de datos
 
-- El contacto del administrador se modela como `admin_contact` (campo fisico legacy: `email_admin`).
+- El contacto del administrador se modela como `admin_contact` (alias legacy en codigo: `email_admin`).
 - En `VERCEL_ENV=production`, la app falla al iniciar si faltan `DATABASE_URL/POSTGRES_*` (no usa fallback SQLite).
 

@@ -31,9 +31,8 @@ class Sorteo(db.Model):
   code = db.Column(db.String(12), default=default_code, nullable=False, unique=True, index=True)
 
   nombre = db.Column(db.String(255), nullable=False)
-  # Physical column remains `email_admin` for backward compatibility.
-  admin_contact = db.Column("email_admin", db.String(320), nullable=False)  # sin encriptar
-  # Transitional alias to avoid breaking existing code and queries.
+  admin_contact = db.Column(db.String(320), nullable=False)  # sin encriptar
+  # Transitional alias for legacy code paths still reading `email_admin`.
   email_admin = synonym("admin_contact")
   estado = db.Column(db.String(20), nullable=False, default="borrador")
 
