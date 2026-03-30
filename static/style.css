@@ -104,7 +104,7 @@ html {
   width: 100%;
   max-width: 1280px;
   width: 100%;
-  margin: 0 auto 16px;
+  margin: 0 auto 18px;
   padding: 10px 14px;
   border-radius: 14px;
   background: var(--card-bg);
@@ -1900,6 +1900,7 @@ th {
 
 .landing .topbar {
   position: sticky;
+  margin-bottom: 22px;
 }
 
 .landing-hero,
@@ -1913,6 +1914,21 @@ th {
 .landing-hero {
   position: relative;
   overflow: hidden;
+  background:
+    radial-gradient(120% 160% at 8% 10%, rgba(14, 165, 233, 0.36) 0%, rgba(14, 165, 233, 0.14) 38%, rgba(255, 255, 255, 0) 72%),
+    radial-gradient(100% 140% at 94% 6%, rgba(249, 115, 22, 0.28) 0%, rgba(249, 115, 22, 0.1) 35%, rgba(255, 255, 255, 0) 70%),
+    linear-gradient(108deg, rgba(14, 165, 233, 0.24) 0%, rgba(236, 250, 255, 0.9) 47%, rgba(249, 115, 22, 0.2) 100%);
+  border-color: rgba(14, 165, 233, 0.32);
+  box-shadow: 0 16px 38px rgba(14, 165, 233, 0.12);
+}
+
+.theme-dark .landing-hero {
+  background:
+    radial-gradient(120% 160% at 8% 10%, rgba(14, 165, 233, 0.32) 0%, rgba(14, 165, 233, 0.1) 38%, rgba(0, 0, 0, 0) 72%),
+    radial-gradient(100% 140% at 94% 6%, rgba(249, 115, 22, 0.24) 0%, rgba(249, 115, 22, 0.08) 35%, rgba(0, 0, 0, 0) 70%),
+    linear-gradient(108deg, rgba(14, 165, 233, 0.2) 0%, rgba(15, 23, 42, 0.75) 47%, rgba(249, 115, 22, 0.2) 100%);
+  border-color: rgba(14, 165, 233, 0.35);
+  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.28);
 }
 
 .landing-hero::before,
