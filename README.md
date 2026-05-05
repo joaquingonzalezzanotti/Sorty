@@ -1,11 +1,19 @@
-# Sorty
+<div align="center">
 
-Sorty es una app web para organizar sorteos de amigo invisible con un flujo simple: cargas participantes, defines exclusiones, generas asignaciones validas y envias notificaciones por email o WhatsApp.
+  <img src="static/sorty_logo.png" alt="Sorty Logo" width="140" />
+
+  <h1>Sorty</h1>
+
+  <p>
+    Organiza participantes, define exclusiones, genera asignaciones válidas y envía notificaciones por email o WhatsApp.
+  </p>
+
+</div>
 
 ## Estado actual
 
-- `https://sorty-neon.vercel.app/` muestra la landing (marketing + SEO).
-- `https://sorty-neon.vercel.app/app` muestra la app operativa para crear el sorteo.
+- `https://sorty.com.ar/` muestra la landing (marketing + SEO).
+- `https://sorty.com.ar/app` muestra la app operativa para crear el sorteo.
 - Cada sorteo guardado tiene una vista de administracion en `/sorteo/<code>` (alias legado: `/draw/<code>`).
 
 ## Funcionalidades principales
@@ -49,33 +57,7 @@ Sorty es una app web para organizar sorteos de amigo invisible con un flujo simp
 - `POST /api/sorteo/<code>/resend` (alias: `POST /api/draw/<code>/resend`): reenvia mensajes por el canal del sorteo.
 - `PATCH /api/sorteo/<code>/participant/<id>/contact` (alias legado `.../email`): corrige contacto de participante.
 
-## Variables de entorno
-
-- `EMAIL_MODE=smtp|console`
-- `SMTP_USER`, `SMTP_PASS`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM_EMAIL`, `SMTP_FROM_NAME`
-- `WHATSAPP_MODE=kapso|console`
-- `KAPSO_API_KEY` (obligatoria para modo `kapso`)
-- `KAPSO_PHONE_NUMBER_ID` (opcional, por defecto `1116659434858231`)
-- `KAPSO_BASE_URL` (opcional, por defecto `https://api.kapso.ai/meta/whatsapp/v24.0`)
-- `KAPSO_USER_AGENT` (opcional, por defecto `Sorty/1.0 (+https://sorty.com.ar)`)
-- `WHATSAPP_USE_TEMPLATES=1|0` (por defecto `1`; en `kapso` envia `type: template`)
-- `KAPSO_TEMPLATE_LANGUAGE` (por defecto `es_AR`)
-- `KAPSO_TEMPLATE_PARTICIPANT_NAME` (por defecto `amigo_invisible_confirmacion`)
-- `KAPSO_TEMPLATE_ADMIN_NAME` (por defecto `amigo_invisible_resultados`)
-- `KAPSO_TEMPLATE_PARTICIPANT_LANGUAGE` (opcional; pisa idioma general para participante)
-- `KAPSO_TEMPLATE_ADMIN_LANGUAGE` (opcional; pisa idioma general para admin)
-- `KAPSO_TEMPLATE_PARTICIPANT_BODY_ORDER` (opcional; por defecto `giver_name,receiver_name,budget,deadline,note,admin_name`)
-- `KAPSO_TEMPLATE_ADMIN_BODY_ORDER` (opcional; por defecto `code`)
-- `KAPSO_TEMPLATE_ADMIN_BUTTON_INDEX` (opcional; si tu template de admin tiene boton URL dinamico, ej `0`)
-- `KAPSO_TEMPLATE_ADMIN_BUTTON_VALUE_SOURCE=draw_link|code|env` (opcional; por defecto `draw_link`)
-- `KAPSO_TEMPLATE_ADMIN_BUTTON_VALUE` (opcional; usado cuando `...VALUE_SOURCE=env`)
-
-## Notas de datos
-
-- El contacto del administrador se modela como `admin_contact` (alias legacy en codigo: `email_admin`).
-- En `VERCEL_ENV=production`, la app falla al iniciar si faltan `DATABASE_URL/POSTGRES_*` (no usa fallback SQLite).
-
-## Expiracion de sorteos (diseno futuro)
+## Expiracion de sorteos (diseño futuro)
 
 Hoy `fecha_expiracion` se guarda pero no se aplica como bloqueo funcional. Para convertirla en una regla real, este es el plan recomendado:
 
