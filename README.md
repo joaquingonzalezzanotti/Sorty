@@ -5,7 +5,7 @@
   <h1>Sorty</h1>
 
   <p>
-    Organiza participantes, define exclusiones, genera asignaciones válidas y envía notificaciones por email o WhatsApp.
+    Sorty es una app web para organizar sorteos de amigo invisible con un flujo simple: cargas participantes, defines exclusiones, generas asignaciones validas y envias notificaciones por email o WhatsApp.
   </p>
 
 </div>
